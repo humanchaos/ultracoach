@@ -56,6 +56,86 @@ export function getLastSyncStatus(): SyncStatus | null {
     return lastSyncStatus;
 }
 
+// ============================================================
+// ACTIVITY CACHE - Reduces API calls from ~16 to 1 per request
+// ============================================================
+
+interface CacheEntry {
+    data: RunActivity[];
+    timestamp: number;
+}
+
+// In-memory cache for activity data (serverless = ephemeral, but helps burst requests)
+const activityCache = new Map<string, CacheEntry>();
+
+// Cache TTL: 5 minutes (in production, new activities won't appear faster anyway)
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+// Detailed activity cache (laps, zones, splits) - keyed by activity ID
+const detailedActivityCache = new Map<number, {
+    laps?: Lap[];
+    splits?: Split[];
+    hrZones?: HRZoneDistribution;
+    timestamp: number;
+}>();
+
+// Detailed cache TTL: 1 hour (activity details don't change)
+const DETAILED_CACHE_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * Get cached activities if fresh, otherwise return null
+ */
+function getCachedActivities(stravaId: string): RunActivity[] | null {
+    const cached = activityCache.get(stravaId);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+        console.log(`[Strava Cache] HIT for ${stravaId} - skipping API call`);
+        return cached.data;
+    }
+    return null;
+}
+
+/**
+ * Store activities in cache
+ */
+function cacheActivities(stravaId: string, data: RunActivity[]): void {
+    activityCache.set(stravaId, { data, timestamp: Date.now() });
+    console.log(`[Strava Cache] Stored ${data.length} activities for ${stravaId}`);
+}
+
+/**
+ * Get cached detailed activity data
+ */
+function getCachedDetailedActivity(activityId: number): {
+    laps?: Lap[];
+    splits?: Split[];
+    hrZones?: HRZoneDistribution;
+} | null {
+    const cached = detailedActivityCache.get(activityId);
+    if (cached && Date.now() - cached.timestamp < DETAILED_CACHE_TTL_MS) {
+        return cached;
+    }
+    return null;
+}
+
+/**
+ * Cache detailed activity data
+ */
+function cacheDetailedActivity(activityId: number, data: {
+    laps?: Lap[];
+    splits?: Split[];
+    hrZones?: HRZoneDistribution;
+}): void {
+    detailedActivityCache.set(activityId, { ...data, timestamp: Date.now() });
+}
+
+/**
+ * Clear cache for a user (call after new activity sync)
+ */
+export function clearStravaCache(stravaId: string): void {
+    activityCache.delete(stravaId);
+    console.log(`[Strava Cache] Cleared for ${stravaId}`);
+}
+
 // Athlete profile info
 export interface AthleteProfile {
     firstName: string;
@@ -195,6 +275,12 @@ function mapWorkoutType(stravaType: number | undefined): WorkoutType {
 
 // Fetch and format Strava activities
 export async function getStravaData(stravaId: string): Promise<RunActivity[]> {
+    // Check cache first
+    const cached = getCachedActivities(stravaId);
+    if (cached) {
+        return cached;
+    }
+
     // Get user from database
     const user = await getUserByStravaId(stravaId);
     if (!user) {
@@ -290,6 +376,16 @@ export async function getStravaData(stravaId: string): Promise<RunActivity[]> {
 
     for (const run of recentRuns) {
         try {
+            // Check if we have cached detailed data for this activity
+            const cachedDetail = getCachedDetailedActivity(run.id);
+            if (cachedDetail) {
+                console.log(`[Strava Cache] Using cached details for activity ${run.id}`);
+                if (cachedDetail.laps) run.laps = cachedDetail.laps;
+                if (cachedDetail.splits) run.splits = cachedDetail.splits;
+                if (cachedDetail.hrZones) run.hr_zones = cachedDetail.hrZones;
+                continue;
+            }
+
             // Fetch laps, detailed activity (for splits), and HR zones in parallel
             const [lapsResponse, detailedResponse, zonesResponse] = await Promise.all([
                 fetch(`https://www.strava.com/api/v3/activities/${run.id}/laps`, {
@@ -375,6 +471,13 @@ export async function getStravaData(stravaId: string): Promise<RunActivity[]> {
             }
 
             console.log(`[Strava] Fetched details for activity ${run.id} (${run.name}): ${run.laps?.length || 0} laps, ${run.splits?.length || 0} splits, zones: ${run.hr_zones ? 'yes' : 'no'}`);
+
+            // Cache the detailed data for next time
+            cacheDetailedActivity(run.id, {
+                laps: run.laps,
+                splits: run.splits,
+                hrZones: run.hr_zones,
+            });
         } catch (detailError) {
             console.error(`[Strava] Error fetching details for activity ${run.id}:`, detailError);
         }
@@ -386,6 +489,9 @@ export async function getStravaData(stravaId: string): Promise<RunActivity[]> {
         timestamp: new Date(),
         activitiesCount: runs.length,
     };
+
+    // Cache the full activity list
+    cacheActivities(stravaId, runs);
 
     return runs;
 }
