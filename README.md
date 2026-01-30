@@ -37,6 +37,8 @@ v1.2 Budget-Based Coaching
 
 ## Getting Started
 
+> ⚠️ **Self-Hosted**: This is a self-hosted application. You'll need your own **Strava API credentials**, **Google AI API key**, and **Vercel Postgres database**. No shared/hosted version is provided.
+
 ### Prerequisites
 
 - Node.js 18+
