@@ -1,6 +1,6 @@
-# UltraCoach 🏃‍♂️⛰️
+# UltraCoach — Strava-Powered AI Running Coach 🏃‍♂️⛰️
 
-**AI-Powered Ultra Running Coach** — Personalized training plans for mountain ultras, powered by Strava data and modern coaching science.
+**Personalized training plans for mountain ultras**, with automatic activity sync and intelligent coaching.
 
 [![Live Demo](https://img.shields.io/badge/demo-myultracoach.vercel.app-blue)](https://myultracoach.vercel.app)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
