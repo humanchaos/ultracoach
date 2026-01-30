@@ -1,36 +1,95 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# UltraCoach 🏃‍♂️⛰️
+
+**AI-Powered Ultra Running Coach** — Personalized training plans for mountain ultras, powered by Strava data and modern coaching science.
+
+[![Live Demo](https://img.shields.io/badge/demo-myultracoach.vercel.app-blue)](https://myultracoach.vercel.app)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)](https://www.typescriptlang.org)
+
+## Features
+
+- 🔗 **Strava Integration** — Auto-sync activities, analyze HR zones, pace, and elevation
+- 🤖 **AI Coach Chat** — Conversational interface for training advice and plan adjustments
+- 📊 **Dynamic Prescriptions** — Daily workouts based on readiness, sleep, and weekly budget
+- 🏔️ **Ultra-Specific Training** — Periodization for 50km-100mile mountain races
+- 🛡️ **Safety Interlocks** — Hard-coded constraints (48h quality spacing, sleep gates)
+
+## Architecture
+
+```
+v1.2 Budget-Based Coaching
+├── Weekly volume/quality budgets (not day-specific plans)
+├── Daily prescription engine with readiness scoring
+├── Safety interlocks (non-negotiable constraints)
+└── Feature flags for gradual rollout
+```
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | Next.js 16, React 19, TypeScript |
+| Styling | Tailwind CSS |
+| Database | Vercel Postgres |
+| Auth | NextAuth.js + Strava OAuth |
+| AI | Google Gemini API |
+| Hosting | Vercel |
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18+
+- Strava API credentials ([get them here](https://www.strava.com/settings/api))
+- Google AI API key
+- Vercel Postgres database
+
+### Setup
 
 ```bash
+# Clone
+git clone https://github.com/humanchaos/ultracoach.git
+cd ultracoach
+
+# Install dependencies
+npm install
+
+# Copy environment template
+cp .env.example .env.local
+# Fill in your credentials in .env.local
+
+# Run locally
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Environment Variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+See `.env.example` for required variables:
+- `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET`
+- `GOOGLE_GENERATIVE_AI_API_KEY`
+- `POSTGRES_URL`
+- `AUTH_SECRET`
 
-## Learn More
+## Project Structure
 
-To learn more about Next.js, take a look at the following resources:
+```
+lib/
+├── coaching/
+│   ├── block-generator.ts      # Macro plan generation
+│   ├── daily-prescription-engine.ts  # Dynamic workout selection
+│   ├── safety-interlocks.ts    # Hard constraints
+│   ├── recovery-state.ts       # Post-race recovery phases
+│   └── system-prompt-v6.ts     # AI coach personality
+├── strava.ts                   # Strava API + caching
+└── db.ts                       # Database operations
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## License
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Private — All rights reserved.
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Built for athletes who chase peaks, not PRs.
