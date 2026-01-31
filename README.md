@@ -88,6 +88,42 @@ lib/
 └── db.ts                       # Database operations
 ```
 
+## 🔒 Strava API Usage & Compliance
+
+UltraCoach uses the Strava API in accordance with [Strava's API Agreement](https://www.strava.com/legal/api).
+
+This project is designed as a **self-hosted, personal-use tool**. Each user must provide and manage their own Strava API credentials and is responsible for complying with Strava's Terms of Service.
+
+### Data Usage
+
+- UltraCoach only accesses and displays activity data for the authenticated user
+- No user data is published, shared, resold, or exposed to third parties
+- Data is used solely for personal analysis and training support
+- No centralized aggregation, social features, or public profiles are provided
+
+### Scope & Limitations
+
+- This project is intended to augment personal training workflows, not to replace or replicate Strava's core platform
+- It does not aim to function as a standalone Strava alternative
+- No social, competitive, or public-facing features are implemented
+
+### AI Usage
+
+- UltraCoach uses AI for personal coaching and analysis
+- Strava API data is **not** used to train external machine learning models
+- AI features operate only on the user's own locally accessible data for individual insights
+
+### Responsibility
+
+Users are responsible for:
+- Obtaining their own Strava API credentials
+- Following Strava's API Terms
+- Ensuring their use complies with applicable policies
+
+The maintainer does not guarantee that individual usage patterns comply with Strava's policies and cannot be responsible for account actions taken by Strava.
+
+> If you are unsure whether your usage complies with Strava's terms, please review the [official API Agreement](https://www.strava.com/legal/api) before using this project.
+
 ## License
 
 Private — All rights reserved.
