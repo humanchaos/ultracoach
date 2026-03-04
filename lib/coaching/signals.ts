@@ -26,6 +26,10 @@ export interface CoachingSignals {
     fourWeekAvgKm: number;
     weekOverWeekChange: number; // percentage
     trend: "building" | "maintaining" | "declining" | "erratic";
+    // Enhanced: cross-training & elevation
+    crossTrainingKm: number;           // aerobic equivalents from non-run activities this week
+    equivalentFlatKm: number;          // elevation-adjusted volume this week
+    thisWeekElevationM: number;        // total elevation gain this week
   };
 
   // Compliance (if we have a plan to compare against)
@@ -69,6 +73,9 @@ export interface CoachingSignals {
     activityCount: number;
     confidence: "high" | "medium" | "low";
   };
+
+  // Progression readiness
+  readyToProgress: boolean;
 }
 
 export interface IntensityViolation {
@@ -103,13 +110,16 @@ export function calculateCoachingSignals(
   const zones = calculateHRZones(athlete, activities);
   const runs = activities.filter(a => a.type === "Run");
 
+  const compliance = calculateComplianceSignals(runs, plannedWorkouts);
+
   return {
-    volume: calculateVolumeSignals(runs),
-    compliance: calculateComplianceSignals(runs, plannedWorkouts),
+    volume: calculateVolumeSignals(runs, activities), // pass all activities for cross-training
+    compliance,
     intensity: calculateIntensitySignals(runs, zones, plannedWorkouts),
     fatigue: calculateFatigueSignals(runs, zones, athlete),
     recentMajorEfforts: detectMajorEfforts(runs),
     signalQuality: assessSignalQuality(runs),
+    readyToProgress: checkReadyToProgress(runs, plannedWorkouts),
   };
 }
 
@@ -117,7 +127,7 @@ export function calculateCoachingSignals(
 // VOLUME CALCULATIONS
 // ============================================
 
-function calculateVolumeSignals(runs: StravaActivity[]): CoachingSignals["volume"] {
+function calculateVolumeSignals(runs: StravaActivity[], allActivities: StravaActivity[]): CoachingSignals["volume"] {
   const now = new Date();
 
   // Get runs by week
@@ -138,12 +148,30 @@ function calculateVolumeSignals(runs: StravaActivity[]): CoachingSignals["volume
   const volumes = [thisWeekKm, lastWeekKm, sumDistance(week2Runs), sumDistance(week3Runs)];
   const trend = determineTrend(volumes);
 
+  // Cross-training: aerobic equivalents from non-run activities this week
+  const thisWeekNonRun = getRunsInWeek(
+    allActivities.filter(a => a.type !== "Run"),
+    now, 0
+  );
+  const crossTrainingKm = thisWeekNonRun.reduce((sum, a) => {
+    return sum + a.distance_km * getCrossTrainingMultiplier(a.type);
+  }, 0);
+
+  // Elevation-aware volume: +100m elevation gain ≈ +1km flat
+  const thisWeekElevationM = thisWeekRuns.reduce(
+    (sum, r) => sum + (r.elevation_gain_m || 0), 0
+  );
+  const equivalentFlatKm = thisWeekKm + (thisWeekElevationM / 100);
+
   return {
     thisWeekKm: round(thisWeekKm, 1),
     lastWeekKm: round(lastWeekKm, 1),
     fourWeekAvgKm: round(fourWeekAvgKm, 1),
     weekOverWeekChange: round(weekOverWeekChange, 0),
     trend,
+    crossTrainingKm: round(crossTrainingKm, 1),
+    equivalentFlatKm: round(equivalentFlatKm, 1),
+    thisWeekElevationM: round(thisWeekElevationM, 0),
   };
 }
 
@@ -170,6 +198,59 @@ function getWeekStart(date: Date): Date {
 
 function sumDistance(runs: StravaActivity[]): number {
   return runs.reduce((sum, r) => sum + r.distance_km, 0);
+}
+
+/**
+ * Cross-training multiplier: converts non-run distance to running-equivalent km.
+ * Based on established exercise physiology aerobic equivalence research.
+ */
+function getCrossTrainingMultiplier(type: StravaActivity['type']): number {
+  switch (type) {
+    case 'Ride': return 0.3;   // Cycling is ~30% of running load per km
+    case 'Swim': return 0.4;   // Swimming is ~40% (full-body but non-weight-bearing)
+    case 'Hike': return 0.8;   // Hiking is ~80% (weight-bearing, lower intensity)
+    case 'Walk': return 0.5;   // Walking is ~50%
+    default: return 0;
+  }
+}
+
+/**
+ * Check if athlete is ready to progress volume.
+ * Returns true when compliance > 85% for 3+ consecutive weeks.
+ */
+function checkReadyToProgress(
+  runs: StravaActivity[],
+  plannedWorkouts?: PlannedWorkout[]
+): boolean {
+  if (!plannedWorkouts || plannedWorkouts.length === 0) return false;
+
+  const now = new Date();
+  let consecutiveGoodWeeks = 0;
+
+  for (let weeksAgo = 1; weeksAgo <= 4; weeksAgo++) {
+    const weekRuns = getRunsInWeek(runs, now, weeksAgo);
+    const weekStart = getWeekStart(now);
+    weekStart.setDate(weekStart.getDate() - (weeksAgo * 7));
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+
+    // Get planned volume for that week
+    const weekPlan = plannedWorkouts.filter(w => {
+      const d = new Date(w.date);
+      return d >= weekStart && d < weekEnd && w.type !== 'rest';
+    });
+
+    const plannedVol = weekPlan.reduce((sum, w) => sum + (w.distance_km || 0), 0);
+    const actualVol = sumDistance(weekRuns);
+
+    if (plannedVol > 0 && (actualVol / plannedVol) >= 0.85) {
+      consecutiveGoodWeeks++;
+    } else {
+      break; // streak broken
+    }
+  }
+
+  return consecutiveGoodWeeks >= 3;
 }
 
 function determineTrend(volumes: number[]): CoachingSignals["volume"]["trend"] {
@@ -674,6 +755,17 @@ export function formatSignalsForPrompt(
     lines.push(`Trend: ${signals.volume.trend} ✓ (expected during recovery)`);
   } else {
     lines.push(`Trend: ${signals.volume.trend}`);
+  }
+
+  // Enhanced volume data
+  if (signals.volume.equivalentFlatKm > signals.volume.thisWeekKm + 0.5) {
+    lines.push(`Equivalent flat volume: ${signals.volume.equivalentFlatKm}km (includes +${signals.volume.thisWeekElevationM}m elevation)`);
+  }
+  if (signals.volume.crossTrainingKm > 0) {
+    lines.push(`Cross-training credit: +${signals.volume.crossTrainingKm}km aerobic equivalent`);
+  }
+  if (signals.readyToProgress) {
+    lines.push(`🟢 READY TO PROGRESS: 3+ weeks above 85% compliance — athlete can safely increase volume`);
   }
   lines.push(``);
 

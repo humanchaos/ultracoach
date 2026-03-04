@@ -321,6 +321,7 @@ function prescribeEasyRun(input: DailyPrescriptionInput, reason: string): DailyP
             targetVertical: 0,
             targetDuration: targetVolume * 6, // ~6 min/km
             hrZones: { primary: 'Z2', ceiling: 'Z2' },
+            paceTarget: '6:00–7:00/km (conversational)',
             structure: {
                 warmup: { duration: 5, description: "Walk 5 min" },
                 main: { description: `Easy run ${targetVolume}km at conversational pace` },
@@ -357,6 +358,12 @@ function prescribeLongRun(input: DailyPrescriptionInput, reason: string): DailyP
             targetVertical: Math.round(targetVolume * 30), // ~30m/km estimate
             targetDuration: targetVolume * 6.5,
             hrZones: { primary: 'Z2', ceiling: 'Z3' },
+            paceTarget: '6:15–7:00/km (aerobic, conversation pace)',
+            nutritionTip: targetVolume >= 25
+                ? 'Take 60g carbs/hr from km 15. Practice race-day nutrition.'
+                : targetVolume >= 18
+                    ? 'Carry gel or snack. Hydrate every 20min.'
+                    : undefined,
             structure: {
                 warmup: { duration: 10, description: "Easy 10 min" },
                 main: { description: `Long run ${targetVolume}km at Z2, final 20% can push to Z3` },

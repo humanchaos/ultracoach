@@ -90,8 +90,13 @@ export function formatTrainingLog(activities: StravaActivity[]): string {
 
     const details = [pace, hr, elev].filter(Boolean).join(" | ");
 
+    // Equivalent flat distance for hilly runs  (+100m gain ≈ +1km flat)
+    const equivFlat = activity.elevation_gain_m
+      ? ` (≈${(activity.distance_km + activity.elevation_gain_m / 100).toFixed(1)}km equiv flat)`
+      : '';
+
     lines.push(`• ${date}: ${activity.name}`);
-    lines.push(`  ${distance}km in ${duration}${details ? ` (${details})` : ''}`);
+    lines.push(`  ${distance}km in ${duration}${details ? ` (${details})` : ''}${equivFlat}`);
   }
 
   // Add summary statistics
@@ -125,7 +130,7 @@ export function formatUpcomingRaces(races: UpcomingRace[]): string {
     lines.push(`### ${race.name} [${race.priority}-priority]`);
     lines.push(`Date: ${formatDate(raceDate)} (${daysUntil} days / ${weeksUntil} weeks away)`);
     lines.push(`Distance: ${race.distance_km}km`);
-    
+
     // Add elevation profile if available
     if (race.elevation_gain_m || race.elevation_loss_m) {
       const gain = race.elevation_gain_m || 0;
@@ -133,7 +138,7 @@ export function formatUpcomingRaces(races: UpcomingRace[]): string {
       const vertDensity = race.distance_km > 0 ? Math.round(gain / race.distance_km) : 0;
       lines.push(`Elevation: +${gain}m / -${loss}m (${vertDensity}m/km)`);
     }
-    
+
     if (race.terrain) lines.push(`Terrain: ${race.terrain}`);
     if (race.goalTime) lines.push(`Goal time: ${race.goalTime}`);
     lines.push(``);

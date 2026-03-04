@@ -167,6 +167,12 @@ export interface PrescribedWorkout {
         ceiling: HRZone;
     };
 
+    // Pace guidance (estimated from recent activity data or LT test)
+    paceTarget?: string;           // e.g., "6:00–7:00/km"
+
+    // Nutrition guidance (for long/quality sessions)
+    nutritionTip?: string;         // e.g., "Take 60g carbs/hr from km 15"
+
     // Workout structure
     structure: WorkoutStructure;
 

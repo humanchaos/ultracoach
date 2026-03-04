@@ -32,6 +32,7 @@ interface DayPlan {
     effortLevel?: string;  // e.g., "RPE 3-4" or "Easy - can hold conversation"
     nutrition?: string;    // e.g., "Eat 2h before. Bring gel for runs >1h"
     recovery?: string;     // NEW: Evening recovery suggestions
+    corosZone?: string;    // COROS watch equivalent zone label
     rationale: string;
 }
 
@@ -289,6 +290,7 @@ function storedWorkoutsToDayPlan(workouts: DailyWorkout[]): DayPlan[] {
             effortLevel: w.effortLevel,
             nutrition: w.nutrition,
             recovery: w.recovery,  // NEW: pass through evening recovery suggestions
+            corosZone: w.corosZone || mapCorosZone(w.type),  // Compute on-the-fly for old data
             rationale: w.rationale || `Stored from training block`,
         };
     });
@@ -312,6 +314,21 @@ function mapIntensity(input: string): DayPlan['intensity'] {
     if (lower.includes('easy') || lower.includes('zone 2') || lower.includes('recovery')) return 'easy';
     if (lower.includes('hard') || lower.includes('interval') || lower.includes('zone 4') || lower.includes('zone 5')) return 'hard';
     return 'moderate';
+}
+
+// Map workout type to COROS watch zone equivalent (for backward compat with old stored data)
+function mapCorosZone(type: string): string {
+    const t = type.toLowerCase();
+    if (t === 'rest') return 'N/A';
+    if (t.includes('recovery') || t.includes('back-to-back')) return 'Z1 Recovery · Easy (RPE)';
+    if (t.includes('easy') || t === 'long run' || t.includes('medium long')) return 'Z2 Aerobic Endurance · Easy (RPE)';
+    if (t.includes('progression') || t.includes('opener')) return 'Z2→Z3 Aerobic End. → Aerobic Pwr · Easy→Moderate (RPE)';
+    if (t.includes('tempo')) return 'Z3 Aerobic Power · Moderate (RPE)';
+    if (t.includes('lt2') || t.includes('sharpener')) return 'Z4 Threshold · Hard (RPE)';
+    if (t.includes('interval') || t.includes('vo2')) return 'Z5 Anaerobic Endurance · Very Hard (RPE)';
+    if (t.includes('hill') || t.includes('power hike')) return 'Z3–Z4 Aerobic Pwr–Threshold · Hard (RPE)';
+    if (t.includes('simulation') || t.includes('race pace')) return 'Z2–Z3 Aerobic End.–Aerobic Pwr · Moderate (RPE)';
+    return 'Z2 Aerobic Endurance · Easy (RPE)';
 }
 
 // Normalize AI-generated plan dates to the CURRENT week
@@ -363,6 +380,7 @@ function dayPlanToStoredWorkouts(plan: DayPlan[]): DailyWorkout[] {
         targetPace: p.targetPace,
         effortLevel: p.effortLevel,
         nutrition: p.nutrition,
+        corosZone: p.corosZone || mapCorosZone(p.title || p.type),
         rationale: p.rationale,
     }));
 }

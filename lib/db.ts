@@ -715,6 +715,7 @@ export interface DailyWorkout {
   effortLevel?: string;  // e.g., "Conversational"
   nutrition?: string;    // e.g., "Eat 2h before. Bring gel for runs >1h"
   recovery?: string;     // NEW: Evening recovery suggestions (massage gun, ice bath, etc.)
+  corosZone?: string;    // COROS watch equivalent zone label
   rationale?: string;    // Why this workout
   modification?: WorkoutModification; // Bio-feedback adjustment record
 }
@@ -1547,4 +1548,113 @@ export async function wipeTestUserData(stravaId: string): Promise<void> {
   await sql`DELETE FROM races WHERE user_strava_id = ${stravaId}`;
   await sql`DELETE FROM user_preferences WHERE user_strava_id = ${stravaId}`;
   console.log(`[DB] Wiped all data for test user: ${stravaId}`);
+}
+
+// ============ SAFETY GUARDIAN LOG FUNCTIONS ============
+
+export interface SafetyLogEntry {
+  id: number;
+  user_strava_id: string;
+  coach_draft: string;
+  guardian_response: {
+    isSafe: boolean;
+    riskLevel?: string;
+    flaggedSessions?: Array<{ day: string; reason: string; maxAllowed: string }>;
+    overallCritique?: string;
+    adjustmentDirectives?: string;
+    // v1 compat
+    critique?: string;
+    recommendedChanges?: string;
+    rawResponse?: string;
+  };
+  iteration_number: number;
+  final_plan_approved: boolean;
+  strava_context?: object;
+  created_at: Date;
+}
+
+/**
+ * Log a Safety Guardian check result to the database
+ */
+export async function logSafetyCheck(entry: {
+  user_strava_id: string;
+  coach_draft: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  guardian_response: any;
+  iteration_number: number;
+  final_plan_approved: boolean;
+  strava_context?: object;
+}): Promise<SafetyLogEntry> {
+  const result = await sql<SafetyLogEntry>`
+    INSERT INTO ai_safety_logs (
+      user_strava_id, coach_draft, guardian_response, 
+      iteration_number, final_plan_approved, strava_context
+    ) VALUES (
+      ${entry.user_strava_id},
+      ${entry.coach_draft.substring(0, 10000)},
+      ${JSON.stringify(entry.guardian_response)},
+      ${entry.iteration_number},
+      ${entry.final_plan_approved},
+      ${entry.strava_context ? JSON.stringify(entry.strava_context) : null}
+    )
+    RETURNING *
+  `;
+  return transformSafetyLog(result.rows[0]);
+}
+
+/**
+ * Get recent safety logs for a user (for debugging/analysis)
+ */
+export async function getRecentSafetyLogs(
+  stravaId: string,
+  limit: number = 20
+): Promise<SafetyLogEntry[]> {
+  const result = await sql<SafetyLogEntry>`
+    SELECT * FROM ai_safety_logs 
+    WHERE user_strava_id = ${stravaId}
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  `;
+  return result.rows.map(transformSafetyLog);
+}
+
+/**
+ * Get safety logs where the Guardian flagged issues (for quality review)
+ */
+export async function getFlaggedSafetyLogs(
+  stravaId?: string,
+  limit: number = 50
+): Promise<SafetyLogEntry[]> {
+  if (stravaId) {
+    const result = await sql<SafetyLogEntry>`
+      SELECT * FROM ai_safety_logs 
+      WHERE user_strava_id = ${stravaId}
+        AND (guardian_response->>'isSafe')::boolean = false
+      ORDER BY created_at DESC
+      LIMIT ${limit}
+    `;
+    return result.rows.map(transformSafetyLog);
+  }
+
+  const result = await sql<SafetyLogEntry>`
+    SELECT * FROM ai_safety_logs 
+    WHERE (guardian_response->>'isSafe')::boolean = false
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  `;
+  return result.rows.map(transformSafetyLog);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function transformSafetyLog(row: any): SafetyLogEntry {
+  return {
+    ...row,
+    guardian_response: typeof row.guardian_response === 'string'
+      ? JSON.parse(row.guardian_response)
+      : row.guardian_response,
+    strava_context: row.strava_context
+      ? (typeof row.strava_context === 'string' ? JSON.parse(row.strava_context) : row.strava_context)
+      : undefined,
+    created_at: new Date(row.created_at),
+  };
 }

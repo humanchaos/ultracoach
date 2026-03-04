@@ -521,10 +521,13 @@ export const ChatInterface = forwardRef<ChatInterfaceRef, ChatInterfaceProps>(
                     {isLoading && messages[messages.length - 1]?.role === "user" && (
                         <div className="flex justify-start">
                             <div className="bg-slate-700/50 rounded-2xl px-4 py-3 border border-white/5">
-                                <div className="flex gap-1.5">
-                                    <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" />
-                                    <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce [animation-delay:0.1s]" />
-                                    <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce [animation-delay:0.2s]" />
+                                <div className="flex items-center gap-2">
+                                    <div className="flex gap-1.5">
+                                        <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" />
+                                        <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce [animation-delay:0.1s]" />
+                                        <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce [animation-delay:0.2s]" />
+                                    </div>
+                                    <span className="text-xs text-purple-300/60">🛡️ Safety Guardian prüft...</span>
                                 </div>
                             </div>
                         </div>

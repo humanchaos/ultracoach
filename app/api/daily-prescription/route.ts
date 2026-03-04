@@ -50,8 +50,12 @@ export async function POST(req: Request) {
         // This is a bridge until we fully migrate the block generator
         const week = convertToWeekFormat(block, today);
 
-        // Get recent activities for recovery spacing
-        const activities = await getStravaData(stravaId);
+        // Fetch activities and journal in PARALLEL (independent reads)
+        const [activities, journalEntries] = await Promise.all([
+            getStravaData(stravaId),
+            getRecentJournal(stravaId, 7),
+        ]);
+
         const recentActivities: RecentActivity[] = activities.slice(0, 14).map((a: RunActivity) => ({
             date: new Date(a.dateISO),
             type: classifyActivityType(a),
@@ -61,9 +65,6 @@ export async function POST(req: Request) {
                 max: a.heart_rate  // RunActivity only has average
             } : undefined
         }));
-
-        // Get wellness data from journal
-        const journalEntries = await getRecentJournal(stravaId, 7);
         const wellness = extractWellnessData(journalEntries);
 
         // Calculate readiness

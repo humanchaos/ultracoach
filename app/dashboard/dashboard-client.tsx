@@ -10,6 +10,8 @@ import { WelcomeOverlay, useOnboarding } from "./welcome-overlay";
 import { CoachHappiness } from "./coach-happiness";
 import { BlockCalendar } from "./block-calendar";
 import { CoachLog } from "./coach-log";
+import { TodayCard } from "./today-card";
+import { ProgressChart } from "./progress-chart";
 import { useState, useRef, useEffect } from "react";
 
 interface Session {
@@ -398,8 +400,17 @@ export function DashboardClient({
                 <div className="flex flex-col lg:flex-row gap-4 h-full">
                     {/* Left Column - Next Race & Recent Runs */}
                     <div className="lg:w-80 shrink-0 flex flex-col gap-4 overflow-auto">
+                        {/* Today's Card - Hero */}
+                        <TodayCard
+                            activities={activities}
+                            onAskCoach={(msg) => chatRef.current?.sendMessage(msg)}
+                        />
+
                         {/* Next Race */}
                         <NextRace races={races} onRacesChange={handleRacesChange} hasActiveBlock={!!activeBlock} />
+
+                        {/* Weekly Progress Chart */}
+                        <ProgressChart activities={activities} />
 
                         {/* Recent Runs */}
                         <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl border border-white/10 p-4 flex-1">
