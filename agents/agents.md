@@ -11,6 +11,7 @@
 | 3 | **Terrain Expert** | [`terrain-expert.md`](agents/terrain-expert.md) | Course analysis, elevation, surface conditions, weather adaptation |
 | 4 | **Coding Expert** | [`coding-expert.md`](agents/coding-expert.md) | Next.js 15, TypeScript, Vercel Postgres, Strava/Gemini APIs, testing |
 | 5 | **UI Expert** | [`ui-expert.md`](agents/ui-expert.md) | Frontend design, UX, accessibility, data visualization, CSS |
+| 6 | **Chat Expert** | [`chat-expert.md`](agents/chat-expert.md) | Conversational logic, coherence, contradiction detection, response quality |
 
 ## Agent Interaction Model
 
@@ -30,12 +31,12 @@
                 ▼                     │
          Domain Advice ◄──────────────┘
                 │
-        ┌───────┴───────┐
-        ▼               ▼
-  ┌──────────┐   ┌────────────┐
-  │  Coding  │   │    UI      │
-  │  Expert  │   │   Expert   │
-  └──────────┘   └────────────┘
+        ┌───────┼───────┐
+        ▼       ▼       ▼
+  ┌────────┐ ┌──────┐ ┌────────┐
+  │ Coding │ │  UI  │ │  Chat  │
+  │ Expert │ │Expert│ │ Expert │
+  └────────┘ └──────┘ └────────┘
 ```
 
 ## Collaboration Rules

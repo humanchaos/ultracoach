@@ -101,13 +101,9 @@ export const ChatInterface = forwardRef<ChatInterfaceRef, ChatInterfaceProps>(
             // Send proactive assessment trigger (slight delay for UX)
             setTimeout(() => {
                 const triggerMessage = `[SYNC_TRIGGER] New workout synced: ${latestActivity.name} (${latestActivity.distance_km}km)`;
-                setInput(triggerMessage);
-                setTimeout(() => {
-                    const form = document.getElementById('chat-form') as HTMLFormElement;
-                    form?.requestSubmit();
-                }, 100);
+                sendInternalMessage(triggerMessage);
             }, 500);
-        }, [activities]);
+        }, [activities]); // eslint-disable-line react-hooks/exhaustive-deps
 
         // Expose sendMessage to parent via ref
         useImperativeHandle(ref, () => ({
@@ -123,40 +119,67 @@ export const ChatInterface = forwardRef<ChatInterfaceRef, ChatInterfaceProps>(
             }
         }));
 
+        // Internal message sender (for SYNC_TRIGGER — hidden from UI)
+        const sendInternalMessage = (internalContent: string) => {
+            if (isLoading) return;
+            sendChatMessage(internalContent, true);
+        };
+
         const handleSubmit = async (e: React.FormEvent) => {
             e.preventDefault();
             if (!input.trim() || isLoading) return;
+            sendChatMessage(input, false);
+        };
+
+        const sendChatMessage = async (messageText: string, isInternal: boolean) => {
+            const isSyncTrigger = messageText.startsWith('[SYNC_TRIGGER]');
+
+            // For sync triggers, show a natural message in the UI instead of system internals
+            const displayContent = isSyncTrigger
+                ? `Just finished a workout — what do you think?`
+                : messageText;
 
             const userMessage: Message = {
                 id: Date.now().toString(),
                 role: "user",
-                content: input,
+                content: displayContent,
             };
 
-            setMessages((prev) => [...prev, userMessage]);
+            if (!isInternal || isSyncTrigger) {
+                setMessages((prev) => [...prev, userMessage]);
+            }
             setInput("");
             setIsLoading(true);
 
             // Detect if this looks like a lifelogging message (explicit wellness/pain/sleep updates)
-            // Only collapse brief status updates, NOT coaching questions
             const lifelogPatterns = /^(pain|sleep|tired|sore|stress:\s*\d|hrv:\s*\d|energy:\s*\d|injury|sick|ill|my .*(hurts|aching)|\d+\s*\/\s*10|slept|fatigued|exhausted|recovered|feeling (tired|great|sore|good|bad))/i;
             const coachingQuestionPatterns = /\?$|what should|how should|recommend|suggest|focus|today|plan|workout|train/i;
-            const isCoachingQuestion = coachingQuestionPatterns.test(input.trim());
-            const isLifelogMessage = lifelogPatterns.test(input.trim()) && !isCoachingQuestion;
+            const isCoachingQuestion = coachingQuestionPatterns.test(messageText.trim());
+            const isLifelogMessage = lifelogPatterns.test(messageText.trim()) && !isCoachingQuestion;
             setLastUserWasLifelog(isLifelogMessage);
+
+            // Sliding window: send last 8 messages + condensed summary of earlier ones
+            const allMessages = [...messages.map((m) => ({ role: m.role, content: m.content })), { role: "user" as const, content: messageText }];
+            const MAX_HISTORY = 8;
+            let messagesToSend;
+            if (allMessages.length > MAX_HISTORY) {
+                const earlier = allMessages.slice(0, allMessages.length - MAX_HISTORY);
+                const summary = `[Earlier in this conversation: ${earlier.length} messages exchanged covering: ${earlier.filter(m => m.role === 'user').map(m => m.content.slice(0, 50)).join('; ')}]`;
+                messagesToSend = [
+                    { role: 'system' as const, content: summary },
+                    ...allMessages.slice(-MAX_HISTORY),
+                ];
+            } else {
+                messagesToSend = allMessages;
+            }
 
             try {
                 const response = await fetch("/api/chat", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        // User messages only - system prompt handled by API (v3 architecture)
-                        messages: [
-                            ...messages.map((m) => ({ role: m.role, content: m.content })),
-                            { role: "user", content: input },
-                        ],
+                        messages: messagesToSend,
                         trainingContext,
-                        // Structured data for v3 buildDataContext
                         activities: activities || [],
                         races: races || [],
                     }),
@@ -398,14 +421,23 @@ export const ChatInterface = forwardRef<ChatInterfaceRef, ChatInterfaceProps>(
                         )
                     );
                 }
-            } catch (error) {
+            } catch (error: unknown) {
                 console.error("Chat error:", error);
+                // Specific error messages based on error type
+                let errorMsg = "Something went wrong. Please try again in a moment.";
+                if (error instanceof TypeError && error.message.includes('fetch')) {
+                    errorMsg = "Connection lost. Check your internet and try again.";
+                } else if (error instanceof Error && error.message.includes('429')) {
+                    errorMsg = "Too many requests — wait a moment and try again.";
+                } else if (error instanceof Error && error.message.includes('timeout')) {
+                    errorMsg = "Response took too long. Try a shorter question.";
+                }
                 setMessages((prev) => [
                     ...prev,
                     {
                         id: Date.now().toString(),
                         role: "assistant",
-                        content: "Sorry, I encountered an error. Please try again.",
+                        content: errorMsg,
                     },
                 ]);
             } finally {
@@ -413,12 +445,30 @@ export const ChatInterface = forwardRef<ChatInterfaceRef, ChatInterfaceProps>(
             }
         };
 
-        const quickPrompts = [
-            "Analyze my recent training",
-            "What should I focus on this week?",
-            "Help me customize my training preferences",
-            "Add nutrition tips to my weekly plan",
-        ];
+        // Dynamic quick prompts based on athlete state
+        const quickPrompts = (() => {
+            const prompts: string[] = [];
+            const latestActivity = activities?.[0];
+            const hasRaces = races && races.length > 0;
+            const noRecentActivity = !latestActivity || (() => {
+                const d = new Date(latestActivity.dateISO || latestActivity.date);
+                return (Date.now() - d.getTime()) > 3 * 24 * 60 * 60 * 1000;
+            })();
+
+            if (noRecentActivity) {
+                prompts.push("I took some days off — what should I do now?");
+            } else {
+                prompts.push("How was my last workout?");
+            }
+            prompts.push("What should I focus on this week?");
+            if (hasRaces) {
+                prompts.push(`How should I prepare for ${races[0].name}?`);
+            } else {
+                prompts.push("Help me set a race goal");
+            }
+            prompts.push("Am I training too hard or too easy?");
+            return prompts;
+        })();
 
         return (
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl border border-white/10 flex flex-col h-full">

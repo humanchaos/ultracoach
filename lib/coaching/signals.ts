@@ -649,6 +649,11 @@ function detectMajorEfforts(runs: StravaActivity[]): MajorEffort[] {
       }
     }
 
+    // Elevation factor: +1 recovery day per 1000m elevation gain
+    if (type && run.elevation_gain_m) {
+      suggestedRecoveryDays += Math.floor(run.elevation_gain_m / 1000);
+    }
+
     if (type) {
       let recoveryStatus: MajorEffort["recoveryStatus"];
       if (daysSince < suggestedRecoveryDays * 0.5) {

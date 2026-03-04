@@ -243,6 +243,7 @@ export interface RecentActivity {
     date: Date;
     type: 'quality' | 'long' | 'easy' | 'recovery' | 'rest';
     volume: number;
+    elevation_gain_m?: number;
     hrData?: {
         average: number;
         max: number;

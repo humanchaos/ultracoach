@@ -170,7 +170,8 @@ export function calculateSessionScore(
 
 export function calculateReadinessScore(
     readiness: ReadinessProfile,
-    wellness: WellnessData
+    wellness: WellnessData,
+    recentActivities?: Array<{ elevation_gain_m?: number; date: Date }>
 ): number {
     let score = 50; // baseline
 
@@ -186,6 +187,17 @@ export function calculateReadinessScore(
 
     // Structural status
     if (readiness.structural === 'compromised') score -= 15;
+
+    // Elevation load in last 72h — heavy vert suppresses readiness
+    if (recentActivities && recentActivities.length > 0) {
+        const now = new Date();
+        const recentVert = recentActivities
+            .filter(a => (now.getTime() - new Date(a.date).getTime()) < 72 * 60 * 60 * 1000)
+            .reduce((sum, a) => sum + (a.elevation_gain_m || 0), 0);
+        if (recentVert > 800) score -= 15;
+        else if (recentVert > 500) score -= 10;
+        else if (recentVert > 300) score -= 5;
+    }
 
     return Math.max(0, Math.min(100, score));
 }
@@ -344,9 +356,21 @@ function prescribeEasyRun(input: DailyPrescriptionInput, reason: string): DailyP
 function prescribeLongRun(input: DailyPrescriptionInput, reason: string): DailyPrescription {
     const remaining = input.week.execution.remainingBudget;
     const budget = input.week.budget;
+
+    // Find longest run in last 30 days to cap progression
+    const now = new Date();
+    const recentRuns = input.recentActivities.filter(a => {
+        const daysAgo = (now.getTime() - new Date(a.date).getTime()) / (1000 * 60 * 60 * 24);
+        return daysAgo <= 30 && a.volume >= 10; // runs 10km+
+    });
+    const longestRecent = recentRuns.length > 0
+        ? Math.max(...recentRuns.map(a => a.volume))
+        : budget.longRunRange.min;
+
     const targetVolume = Math.min(
         budget.longRunRange.max,
-        remaining.volume * 0.5
+        remaining.volume * 0.5,
+        longestRecent * 1.15 // max 15% increase over longest recent run
     );
 
     return {

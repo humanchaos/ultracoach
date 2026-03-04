@@ -150,9 +150,10 @@ export function formatUpcomingRaces(races: UpcomingRace[]): string {
 export function formatVolumeSummary(activities: StravaActivity[]): string {
   const now = new Date();
   const runs = activities.filter(a => a.type === "Run");
+  const nonRuns = activities.filter(a => a.type !== "Run");
 
   // Calculate weekly volumes for the last 4 weeks
-  const weeks: { start: Date; end: Date; volume: number; count: number }[] = [];
+  const weeks: { start: Date; end: Date; volume: number; count: number; crossTrainKm: number; elevationM: number }[] = [];
 
   for (let i = 0; i < 4; i++) {
     const weekEnd = new Date(now);
@@ -168,11 +169,25 @@ export function formatVolumeSummary(activities: StravaActivity[]): string {
       return d >= weekStart && d <= weekEnd;
     });
 
+    const weekNonRuns = nonRuns.filter(a => {
+      const d = new Date(a.date);
+      return d >= weekStart && d <= weekEnd;
+    });
+
+    const crossTrainKm = weekNonRuns.reduce((sum, a) => {
+      const multiplier = a.type === "Ride" ? 0.3 : a.type === "Swim" ? 0.4 : a.type === "Hike" ? 0.8 : 0;
+      return sum + a.distance_km * multiplier;
+    }, 0);
+
+    const elevationM = weekRuns.reduce((sum, a) => sum + (a.elevation_gain_m || 0), 0);
+
     weeks.push({
       start: weekStart,
       end: weekEnd,
       volume: weekRuns.reduce((sum, a) => sum + a.distance_km, 0),
       count: weekRuns.length,
+      crossTrainKm,
+      elevationM,
     });
   }
 
@@ -180,7 +195,9 @@ export function formatVolumeSummary(activities: StravaActivity[]): string {
 
   weeks.forEach((week, i) => {
     const label = i === 0 ? "This week" : i === 1 ? "Last week" : `${i + 1} weeks ago`;
-    lines.push(`${label}: ${week.volume.toFixed(1)}km across ${week.count} runs`);
+    const crossNote = week.crossTrainKm > 0 ? ` + ${week.crossTrainKm.toFixed(1)}km cross-train equiv` : '';
+    const elevNote = week.elevationM > 0 ? ` | ${week.elevationM}m vert` : '';
+    lines.push(`${label}: ${week.volume.toFixed(1)}km running${crossNote} across ${week.count} runs${elevNote}`);
   });
 
   // Find longest run in past 30 days
