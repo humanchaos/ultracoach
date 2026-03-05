@@ -812,11 +812,20 @@ export async function updateTrainingBlockStatus(
   `;
 }
 
-// Get current week number in a block
+// Get current week number in a block (Monday-aligned to match block-calendar.tsx grid)
 export function getCurrentWeekInBlock(block: TrainingBlock): number {
   const now = new Date();
-  const start = block.start_date;
-  const diffMs = now.getTime() - start.getTime();
+  now.setHours(0, 0, 0, 0);
+
+  // Find the Monday of the week containing the start date
+  const startDate = new Date(block.start_date);
+  startDate.setHours(0, 0, 0, 0);
+  const dow = startDate.getDay();
+  const daysSinceMonday = dow === 0 ? 6 : dow - 1;
+  const startMonday = new Date(startDate);
+  startMonday.setDate(startMonday.getDate() - daysSinceMonday);
+
+  const diffMs = now.getTime() - startMonday.getTime();
   const diffWeeks = Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000));
   return Math.max(1, Math.min(diffWeeks + 1, block.block_plan.totalWeeks));
 }
