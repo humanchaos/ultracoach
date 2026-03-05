@@ -53,6 +53,8 @@ interface WeeklyPlanProps {
     activities?: Activity[];
     races?: Race[];
     onWorkoutsSaved?: () => void;
+    blockWorkouts?: DayPlan[];  // Pre-loaded from training block (single source of truth)
+    weekSummaryOverride?: string; // Summary from training block
 }
 
 function parsePlanDate(dateStr: string): Date {
@@ -96,7 +98,7 @@ function getDayStatus(dateStr: string): "past" | "today" | "future" {
     return "future";
 }
 
-export function WeeklyPlanView({ trainingContext, racesContext, activities, races, onWorkoutsSaved }: WeeklyPlanProps) {
+export function WeeklyPlanView({ trainingContext, racesContext, activities, races, onWorkoutsSaved, blockWorkouts, weekSummaryOverride }: WeeklyPlanProps) {
     const [plan, setPlan] = useState<DayPlan[]>([]);
     const [weekSummary, setWeekSummary] = useState("");
     const [isLoading, setIsLoading] = useState(true);
@@ -115,12 +117,21 @@ export function WeeklyPlanView({ trainingContext, racesContext, activities, race
     }, []);
 
     useEffect(() => {
+        // If block workouts are provided, use them directly (single source of truth)
+        if (blockWorkouts && blockWorkouts.length > 0) {
+            setPlan(blockWorkouts);
+            setWeekSummary(weekSummaryOverride || '');
+            setFromStorage(true);
+            setIsLoading(false);
+            setHasLoaded(true);
+            return;
+        }
         // Only generate once per mount, not on every context change
         if (!hasLoaded) {
             generatePlan();
             setHasLoaded(true);
         }
-    }, [hasLoaded]);
+    }, [hasLoaded, blockWorkouts]);
 
     const generatePlan = async (mode: 'normal' | 'force' | 'enhance' = 'normal') => {
         setIsLoading(true);
