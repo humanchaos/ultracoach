@@ -59,6 +59,7 @@ interface DashboardClientProps {
     racesContext: string;
     error: string | null;
     userSignupDate: string | null;
+    commitSha?: string;
 }
 
 export function DashboardClient({
@@ -70,6 +71,7 @@ export function DashboardClient({
     racesContext,
     error,
     userSignupDate,
+    commitSha,
 }: DashboardClientProps) {
     const [refreshKey, setRefreshKey] = useState(0);
     const [showPreferences, setShowPreferences] = useState(false);
@@ -421,6 +423,11 @@ export function DashboardClient({
                                 {session.user.name}
                             </span>
                         </div>
+                        {commitSha && (
+                            <span className="text-xs text-purple-500/60 font-mono hidden sm:block" title="Deployed commit">
+                                {commitSha}
+                            </span>
+                        )}
                         <button
                             onClick={() => signOut({ callbackUrl: "/dashboard" })}
                             className="text-sm text-purple-400 hover:text-white transition-colors"

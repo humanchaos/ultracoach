@@ -164,6 +164,8 @@ ${racesContext}
 
 Note: Consider the athlete's age and gender when giving recovery and training advice.`;
 
+    const commitSha = process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7);
+
     return (
         <DashboardClient
             session={session}
@@ -174,6 +176,7 @@ Note: Consider the athlete's age and gender when giving recovery and training ad
             racesContext={racesContext}
             error={error}
             userSignupDate={userSignupDate}
+            commitSha={commitSha}
         />
     );
 }
