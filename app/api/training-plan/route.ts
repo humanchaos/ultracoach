@@ -32,6 +32,7 @@ interface DayPlan {
     effortLevel?: string;  // e.g., "RPE 3-4" or "Easy - can hold conversation"
     nutrition?: string;    // e.g., "Eat 2h before. Bring gel for runs >1h"
     recovery?: string;     // NEW: Evening recovery suggestions
+    corosZone?: string;    // COROS watch equivalent zone label
     rationale: string;
 }
 
@@ -55,23 +56,28 @@ function adaptActivities(activities: Array<{
     elevation_gain_m?: number;
     type?: string;
 }>): StravaActivity[] {
-    return activities.map((a, i) => ({
-        id: a.id || `activity-${i}`,
-        name: a.name,
-        // Use dateISO if available (accurate), otherwise parse display format
-        date: a.dateISO ? new Date(a.dateISO) : parseActivityDate(a.date),
-        distance_km: a.distance_km,
-        duration_minutes: a.duration_minutes || 0,
-        pace_min_per_km: a.pace ? parsePace(a.pace) : undefined,
-        average_hr: a.heart_rate,
-        elevation_gain_m: a.elevation_gain_m,
-        type: (a.type === "Run" || a.type === "Walk" || a.type === "Hike" ||
-            a.type === "Ride" || a.type === "Swim") ? a.type : "Run" as const,
-    }));
+    return activities
+        .map((a, i) => {
+            const date = a.dateISO ? new Date(a.dateISO) : parseActivityDate(a.date);
+            if (!date) return null;
+            return {
+                id: a.id || `activity-${i}`,
+                name: a.name,
+                date,
+                distance_km: a.distance_km,
+                duration_minutes: a.duration_minutes || 0,
+                pace_min_per_km: a.pace ? parsePace(a.pace) : undefined,
+                average_hr: a.heart_rate,
+                elevation_gain_m: a.elevation_gain_m,
+                type: (a.type === "Run" || a.type === "Walk" || a.type === "Hike" ||
+                    a.type === "Ride" || a.type === "Swim") ? a.type : "Run" as const,
+            };
+        })
+        .filter((a): a is StravaActivity => a !== null);
 }
 
 // Parse activity date - handles "Mon, Dec 29" format
-function parseActivityDate(dateStr: string): Date {
+function parseActivityDate(dateStr: string): Date | null {
     const currentYear = new Date().getFullYear();
     const match = dateStr.match(/([A-Za-z]+),?\s*([A-Za-z]+)\s+(\d+)/);
     if (match) {
@@ -86,7 +92,8 @@ function parseActivityDate(dateStr: string): Date {
     }
     const parsed = new Date(dateStr);
     if (!isNaN(parsed.getTime())) return parsed;
-    return new Date();
+    console.warn(`[parseActivityDate] Failed to parse date: "${dateStr}" — activity skipped`);
+    return null;
 }
 
 function parsePace(paceStr: string): number | undefined {
@@ -289,6 +296,7 @@ function storedWorkoutsToDayPlan(workouts: DailyWorkout[]): DayPlan[] {
             effortLevel: w.effortLevel,
             nutrition: w.nutrition,
             recovery: w.recovery,  // NEW: pass through evening recovery suggestions
+            corosZone: w.corosZone || mapCorosZone(w.type),  // Compute on-the-fly for old data
             rationale: w.rationale || `Stored from training block`,
         };
     });
@@ -312,6 +320,21 @@ function mapIntensity(input: string): DayPlan['intensity'] {
     if (lower.includes('easy') || lower.includes('zone 2') || lower.includes('recovery')) return 'easy';
     if (lower.includes('hard') || lower.includes('interval') || lower.includes('zone 4') || lower.includes('zone 5')) return 'hard';
     return 'moderate';
+}
+
+// Map workout type to COROS watch zone equivalent (for backward compat with old stored data)
+function mapCorosZone(type: string): string {
+    const t = type.toLowerCase();
+    if (t === 'rest') return 'N/A';
+    if (t.includes('recovery') || t.includes('back-to-back')) return 'Z1 Recovery · Easy (RPE)';
+    if (t.includes('easy') || t === 'long run' || t.includes('medium long')) return 'Z2 Aerobic Endurance · Easy (RPE)';
+    if (t.includes('progression') || t.includes('opener')) return 'Z2→Z3 Aerobic End. → Aerobic Pwr · Easy→Moderate (RPE)';
+    if (t.includes('tempo')) return 'Z3 Aerobic Power · Moderate (RPE)';
+    if (t.includes('lt2') || t.includes('sharpener')) return 'Z4 Threshold · Hard (RPE)';
+    if (t.includes('interval') || t.includes('vo2')) return 'Z5 Anaerobic Endurance · Very Hard (RPE)';
+    if (t.includes('hill') || t.includes('power hike')) return 'Z3–Z4 Aerobic Pwr–Threshold · Hard (RPE)';
+    if (t.includes('simulation') || t.includes('race pace')) return 'Z2–Z3 Aerobic End.–Aerobic Pwr · Moderate (RPE)';
+    return 'Z2 Aerobic Endurance · Easy (RPE)';
 }
 
 // Normalize AI-generated plan dates to the CURRENT week
@@ -363,6 +386,7 @@ function dayPlanToStoredWorkouts(plan: DayPlan[]): DailyWorkout[] {
         targetPace: p.targetPace,
         effortLevel: p.effortLevel,
         nutrition: p.nutrition,
+        corosZone: p.corosZone || mapCorosZone(p.title || p.type),
         rationale: p.rationale,
     }));
 }

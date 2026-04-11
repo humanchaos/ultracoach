@@ -1,9 +1,10 @@
 import { SYSTEM_PROMPT_V4, SYSTEM_PROMPT_V5, buildDataContext, calculateRecoveryState, formatRecoveryStateForPrompt, type Athlete, type StravaActivity, type UpcomingRace } from "@/lib/coaching";
+import { buildSessionContext, generateFinalPlan, formatSafetyDisclaimer, type SafetyCheckResult, type SessionContext } from "@/lib/coaching/safety-guardian";
 import { interpretLifelog, formatReadinessForContext } from "@/lib/lifelog";
 import { auth } from "@/lib/auth";
-import { getRecentJournal, formatJournalForAI, upsertJournalEntry, getActiveTrainingBlock, getCurrentWeekInBlock, formatBlockForAIv2, getRaceById, getLactateTest } from "@/lib/db";
+import { getRecentJournal, formatJournalForAI, upsertJournalEntry, getActiveTrainingBlock, getCurrentWeekInBlock, formatBlockForAIv2, getRaceById, getLactateTest, logSafetyCheck } from "@/lib/db";
 
-export const maxDuration = 30;
+export const maxDuration = 45; // Increased to accommodate Safety Guardian loop
 
 // Adapter: Convert incoming activity data to v3 StravaActivity format
 function adaptActivities(activities: Array<{
@@ -18,23 +19,28 @@ function adaptActivities(activities: Array<{
     elevation_gain_m?: number;
     type?: string;
 }>): StravaActivity[] {
-    return activities.map((a, i) => ({
-        id: a.id || `activity-${i}`,
-        name: a.name,
-        // Use dateISO if available (accurate), otherwise parse display format
-        date: a.dateISO ? new Date(a.dateISO) : parseActivityDate(a.date),
-        distance_km: a.distance_km,
-        duration_minutes: a.duration_minutes || 0,
-        pace_min_per_km: a.pace ? parsePace(a.pace) : undefined,
-        average_hr: a.heart_rate,
-        elevation_gain_m: a.elevation_gain_m,
-        type: (a.type === "Run" || a.type === "Walk" || a.type === "Hike" ||
-            a.type === "Ride" || a.type === "Swim") ? a.type : "Run" as const,
-    }));
+    return activities
+        .map((a, i) => {
+            const date = a.dateISO ? new Date(a.dateISO) : parseActivityDate(a.date);
+            if (!date) return null;
+            return {
+                id: a.id || `activity-${i}`,
+                name: a.name,
+                date,
+                distance_km: a.distance_km,
+                duration_minutes: a.duration_minutes || 0,
+                pace_min_per_km: a.pace ? parsePace(a.pace) : undefined,
+                average_hr: a.heart_rate,
+                elevation_gain_m: a.elevation_gain_m,
+                type: (a.type === "Run" || a.type === "Walk" || a.type === "Hike" ||
+                    a.type === "Ride" || a.type === "Swim") ? a.type : "Run" as const,
+            };
+        })
+        .filter((a): a is StravaActivity => a !== null);
 }
 
 // Parse activity date - handles "Mon, Dec 29" format by adding current year (fallback)
-function parseActivityDate(dateStr: string): Date {
+function parseActivityDate(dateStr: string): Date | null {
     const currentYear = new Date().getFullYear();
     const match = dateStr.match(/([A-Za-z]+),?\s*([A-Za-z]+)\s+(\d+)/);
     if (match) {
@@ -45,13 +51,12 @@ function parseActivityDate(dateStr: string): Date {
             'jul': 6, 'aug': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dec': 11
         };
         const month = months[monthStr.toLowerCase().slice(0, 3)];
-        if (month !== undefined) {
-            return new Date(currentYear, month, day);
-        }
+        if (month !== undefined) return new Date(currentYear, month, day);
     }
     const parsed = new Date(dateStr);
     if (!isNaN(parsed.getTime())) return parsed;
-    return new Date();
+    console.warn(`[parseActivityDate] Failed to parse date: "${dateStr}" — activity skipped`);
+    return null;
 }
 
 function parsePace(paceStr: string): number | undefined {
@@ -445,13 +450,107 @@ ${lactateTest.max_hr ? `- Max HR: ${lactateTest.max_hr} bpm` : ''}`;
             );
         }
 
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated";
+        let coachResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated";
+
+        // ============ SAFETY GUARDIAN v2: SessionContext + Orchestration ============
+
+        // Get user session for logging
+        let userStravaId: string | undefined;
+        try {
+            const session = await auth();
+            userStravaId = session?.user?.stravaId;
+        } catch { /* ignore auth errors for logging */ }
+
+        // Build SessionContext — Single Source of Truth for Coach & Guardian
+        const nextRace = v3Races.length > 0 ? {
+            name: v3Races[0].name,
+            date: v3Races[0].date,
+            distance_km: v3Races[0].distance_km,
+        } : undefined;
+
+        const sessionContext: SessionContext = buildSessionContext(
+            v3Activities.map(a => ({
+                date: a.date,
+                distance_km: a.distance_km,
+                name: a.name,
+                type: a.type,
+                average_hr: a.average_hr,
+            })),
+            {
+                userStravaId: userStravaId || 'unknown',
+                restingHrTrend: athleteProfile?.restingHrTrend,
+                sleepScore: lifelogResult?.readiness_profile?.energy_availability?.status === 'COMPROMISED' ? 'Poor'
+                    : lifelogResult?.readiness_profile?.energy_availability?.status === 'REDUCED' ? 'Fair'
+                        : lifelogResult?.readiness_profile?.energy_availability?.status === 'OPTIMAL' ? 'Good'
+                            : undefined,
+                nextRace,
+                trainingPhase: trainingContext?.trainingPhase,
+                weeklyVolumeTarget_km: athletePreferences?.max_weekly_volume_km,
+            }
+        );
+
+        console.log(`[Safety Guardian v2] SessionContext built: ACWR=${sessionContext.stravaMetrics.acwr?.toFixed(2)}, sleep=${sessionContext.biometrics.sleepScore}`);
+
+        // Regeneration function: calls Coach AI again with Guardian feedback
+        const regenerateFn = async (feedback: string): Promise<string> => {
+            const regenerateContents = [
+                ...contents,
+                { role: 'model', parts: [{ text: coachResponse }] },
+                { role: 'user', parts: [{ text: feedback }] },
+            ];
+
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: regenerateContents,
+                        systemInstruction: { parts: [{ text: systemPrompt }] },
+                        generationConfig: {
+                            temperature: 0.6,
+                            topP: 0.85,
+                            maxOutputTokens: 1000,
+                        },
+                    }),
+                }
+            );
+
+            if (!response.ok) throw new Error('Regeneration failed');
+            const regenData = await response.json();
+            return regenData.candidates?.[0]?.content?.parts?.[0]?.text || coachResponse;
+        };
+
+        // Run adversarial orchestration loop
+        const guardianResult = await generateFinalPlan(
+            coachResponse,
+            sessionContext,
+            apiKey,
+            regenerateFn,
+            userStravaId ? async (entry) => {
+                try {
+                    await logSafetyCheck({
+                        user_strava_id: userStravaId!,
+                        coach_draft: entry.coach_draft,
+                        guardian_response: entry.guardian_response,
+                        iteration_number: entry.iteration_number,
+                        final_plan_approved: entry.final_plan_approved,
+                        strava_context: sessionContext.stravaMetrics,
+                    });
+                } catch (logError) {
+                    console.warn('[Safety Guardian] Failed to log to DB:', logError);
+                }
+            } : undefined
+        );
+
+        const finalResponse = guardianResult.finalPlan;
+        console.log(`[Safety Guardian v2] Result: iterations=${guardianResult.iterations}, riskLevel=${guardianResult.safetyResult.riskLevel}, recoveryWeek=${guardianResult.wasRecoveryWeek}`);
 
         // Return as streaming format that our client expects
         const encoder = new TextEncoder();
         const stream = new ReadableStream({
             start(controller) {
-                controller.enqueue(encoder.encode(`0:"${text.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"\n`));
+                controller.enqueue(encoder.encode(`0:"${finalResponse.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"\n`));
                 controller.close();
             },
         });

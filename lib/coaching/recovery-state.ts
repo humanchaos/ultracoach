@@ -179,23 +179,27 @@ function findMostRecentMajorEffort(activities: StravaActivity[]): {
   date: string;
 } | null {
 
-  for (const activity of activities) {
-    // Only check runs (includes trail runs in our type)
+  // Sort newest first so the first match is always the most recent major effort
+  const sorted = [...activities].sort((a, b) => {
+    const dateA = a.date instanceof Date ? a.date : new Date(a.date);
+    const dateB = b.date instanceof Date ? b.date : new Date(b.date);
+    return dateB.getTime() - dateA.getTime();
+  });
+
+  for (const activity of sorted) {
     if (activity.type !== 'Run') continue;
 
-    const distanceKm = activity.distance_km; // Already in km
+    const distanceKm = activity.distance_km;
     const name = activity.name.toLowerCase();
 
     let effortType: '50K' | '50M' | '100K' | '100M' | 'MARATHON' | null = null;
 
-    // Check by distance
     if (distanceKm >= 155) effortType = '100M';
     else if (distanceKm >= 95) effortType = '100K';
     else if (distanceKm >= 75) effortType = '50M';
     else if (distanceKm >= 48) effortType = '50K';
     else if (distanceKm >= 40) effortType = 'MARATHON';
 
-    // Check by name pattern
     if (!effortType) {
       if (name.includes('100 mile') || name.includes('100mi')) effortType = '100M';
       else if (name.includes('100k')) effortType = '100K';
@@ -205,15 +209,10 @@ function findMostRecentMajorEffort(activities: StravaActivity[]): {
     }
 
     if (effortType) {
-      // Convert Date to ISO string if needed
       const dateStr = typeof activity.date === 'string'
         ? activity.date
         : activity.date.toISOString();
-      return {
-        type: effortType,
-        name: activity.name,
-        date: dateStr,
-      };
+      return { type: effortType, name: activity.name, date: dateStr };
     }
   }
 
