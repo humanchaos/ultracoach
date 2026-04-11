@@ -4,7 +4,7 @@
 
 import { Athlete, StravaActivity, UpcomingRace, PlannedWorkout } from "./types";
 import { calculateCoachingSignals, formatSignalsForPrompt } from "./signals";
-import { calculateHRZones, formatHRZonesForPrompt } from "./hr-zones";
+import { calculateHRZones, formatHRZonesForPrompt, type LactateZoneInput } from "./hr-zones";
 import { JournalEntry, formatJournalForAI, DailyWorkout } from "../db";
 import { calculateRecoveryState, formatRecoveryStateForPrompt, RecoveryState } from "./recovery-state";
 import { analyzeRecentWorkouts, formatWorkoutAnalysisForPrompt } from "./workout-analyzer";
@@ -286,10 +286,11 @@ export interface DataContext {
   plannedWorkouts?: PlannedWorkout[]; // Optional - for compliance tracking
   journalEntries?: JournalEntry[];     // Optional - wellness data (last 7-30 days)
   trainingBlock?: TrainingBlockData;   // Optional - for workout analysis
+  lactateTest?: LactateZoneInput | null; // Optional - when present, overrides Karvonen zones
 }
 
 export function buildDataContext(input: DataContext): string {
-  const { athlete, activities, races, lastSyncTime, plannedWorkouts, journalEntries, trainingBlock } = input;
+  const { athlete, activities, races, lastSyncTime, plannedWorkouts, journalEntries, trainingBlock, lactateTest } = input;
 
   // STEP 1: Calculate recovery state FIRST
   // This determines if we're in post-race recovery and which signals should be suppressed
@@ -304,8 +305,8 @@ export function buildDataContext(input: DataContext): string {
   // STEP 2: Calculate coaching signals (knowing recovery context)
   const signals = calculateCoachingSignals(activities, athlete, plannedWorkouts);
 
-  // Calculate HR zones
-  const zones = calculateHRZones(athlete, activities);
+  // Calculate HR zones — lactate test takes priority over Karvonen
+  const zones = calculateHRZones(athlete, activities, lactateTest);
 
   // Format journal (wellness) data
   const journalContext = journalEntries ? formatJournalForAI(journalEntries) : '';

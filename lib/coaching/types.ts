@@ -96,7 +96,7 @@ export interface VolumeConstraints {
 }
 
 export interface HRZones {
-  method: "karvonen" | "percentage_max" | "athlete_defined" | "estimated";
+  method: "karvonen" | "percentage_max" | "athlete_defined" | "estimated" | "lactate_anchored";
   maxHR: number;
   restingHR: number;
   zones: {

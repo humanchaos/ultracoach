@@ -248,13 +248,15 @@ export async function POST(req: Request) {
         // Fetch training block, journal, and lactate in PARALLEL (all independent reads)
         let trainingBlockData = undefined;
         let trainingBlockContext = '';
+        let lactateTest = null;
 
         if (userStravaId) {
-            const [block, journalEntries, lactateTest] = await Promise.all([
+            const [block, journalEntries, lactateTestResult] = await Promise.all([
                 getActiveTrainingBlock(userStravaId).catch(err => { console.warn('[Chat API v10] Could not load training block:', err); return null; }),
                 getRecentJournal(userStravaId, 90).catch(err => { console.warn('[Chat API v10] Could not load journal history:', err); return [] as JournalEntry[]; }),
                 getLactateTest(userStravaId).catch(err => { console.warn('[Chat API v10] Could not load lactate data:', err); return null; }),
             ]);
+            lactateTest = lactateTestResult;
 
             // Process training block
             if (block) {
@@ -283,22 +285,9 @@ export async function POST(req: Request) {
                 }
             }
 
-            // Process lactate test (6. PERSONALIZED HR ZONES)
-            if (lactateTest && (lactateTest.z1_hr || lactateTest.aerobic_threshold_hr)) {
-                const zoneContext = `## PERSONALIZED HR ZONES (from lab test data)
-
-**IMPORTANT: Always use these exact zone values when prescribing workouts.**
-
-${lactateTest.z1_hr ? `- Zone 1 (Recovery): ${lactateTest.z1_hr} bpm` : ''}
-${lactateTest.z2_hr ? `- Zone 2 (Aerobic): ${lactateTest.z2_hr} bpm` : ''}
-${lactateTest.z3_hr ? `- Zone 3 (Tempo): ${lactateTest.z3_hr} bpm` : ''}
-${lactateTest.z4_hr ? `- Zone 4 (Threshold): ${lactateTest.z4_hr} bpm` : ''}
-${lactateTest.z5_hr ? `- Zone 5 (VO2max): ${lactateTest.z5_hr} bpm` : ''}
-${lactateTest.aerobic_threshold_hr ? `- LT1 (Aerobic Threshold): ${lactateTest.aerobic_threshold_hr} bpm` : ''}
-${lactateTest.anaerobic_threshold_hr ? `- LT2 (Anaerobic Threshold): ${lactateTest.anaerobic_threshold_hr} bpm` : ''}
-${lactateTest.max_hr ? `- Max HR: ${lactateTest.max_hr} bpm` : ''}`;
-                contextSections.push(zoneContext);
-                if (isDev) console.log(`[Chat API v10] Loaded personalized HR zones: Z2=${lactateTest.z2_hr || 'calculated'}`);
+            // Lactate zones are now wired into buildDataContext below — no separate injection needed
+            if (isDev && lactateTestResult?.z1_hr) {
+                console.log(`[Chat API v10] Lactate zones loaded: Z2=${lactateTestResult.z2_hr || 'calculated'} (will override Karvonen in HR zones)`);
             }
         }
 
@@ -308,6 +297,7 @@ ${lactateTest.max_hr ? `- Max HR: ${lactateTest.max_hr} bpm` : ''}`;
             races: v3Races,
             lastSyncTime: new Date(),
             trainingBlock: trainingBlockData,
+            lactateTest: lactateTest ?? null,
         });
         contextSections.push(dataContext);
 

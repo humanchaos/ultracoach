@@ -4,6 +4,52 @@
 
 import { Athlete, StravaActivity, HRZones } from "./types";
 
+// Minimal lactate test shape needed for zone calculation
+export interface LactateZoneInput {
+  z1_hr?: string | null;
+  z2_hr?: string | null;
+  z3_hr?: string | null;
+  z4_hr?: string | null;
+  z5_hr?: string | null;
+  max_hr?: number | null;
+}
+
+// Parse "104-126" → { min: 104, max: 126 }
+function parseZoneString(s: string | null | undefined): { min: number; max: number } | null {
+  if (!s) return null;
+  const [a, b] = s.split('-').map(Number);
+  if (!isFinite(a) || !isFinite(b)) return null;
+  return { min: a, max: b };
+}
+
+// Build HRZones directly from saved lab test zones — no estimates needed
+function buildLactateZones(lactate: LactateZoneInput): HRZones | null {
+  const z1 = parseZoneString(lactate.z1_hr);
+  const z2 = parseZoneString(lactate.z2_hr);
+  const z3 = parseZoneString(lactate.z3_hr);
+  const z4 = parseZoneString(lactate.z4_hr);
+  const z5 = parseZoneString(lactate.z5_hr);
+
+  // Need at least 4 zones to be useful; zone5 max anchors to max_hr
+  if (!z1 || !z2 || !z3 || !z4) return null;
+
+  const maxHR = lactate.max_hr ?? (z5?.max ?? z4.max + 10);
+  const z5Final = z5 ?? { min: z4.max, max: maxHR };
+
+  return {
+    method: "lactate_anchored",
+    maxHR,
+    restingHR: 0, // not used in lactate-anchored model
+    zones: {
+      zone1: { ...z1, name: "Recovery" },
+      zone2: { ...z2, name: "Easy/Aerobic" },
+      zone3: { ...z3, name: "Tempo" },
+      zone4: { ...z4, name: "Threshold" },
+      zone5: { ...z5Final, name: "VO2max" },
+    },
+  };
+}
+
 // Fallback: Age-based max HR estimation
 function estimateMaxHR(age: number): number {
   // Tanaka formula (more accurate than 220-age)
@@ -45,13 +91,20 @@ function detectRestingHRFromActivities(activities: StravaActivity[]): number | n
 
 export function calculateHRZones(
   athlete: Athlete,
-  activities: StravaActivity[]
+  activities: StravaActivity[],
+  lactate?: LactateZoneInput | null
 ): HRZones {
+  // Priority 1: lab-measured lactate zones (most accurate)
+  if (lactate) {
+    const lactateZones = buildLactateZones(lactate);
+    if (lactateZones) return lactateZones;
+  }
+
   let maxHR: number;
   let restingHR: number;
   let method: HRZones["method"];
 
-  // Priority: athlete-defined > detected from data > age-estimated
+  // Priority 2: athlete-defined maxHR + restingHR > detected from data > age-estimated
   if (athlete.maxHR && athlete.restingHR) {
     maxHR = athlete.maxHR;
     restingHR = athlete.restingHR;
@@ -108,11 +161,13 @@ export function classifyActivityIntensity(
 
 // Format for prompt injection
 export function formatHRZonesForPrompt(zones: HRZones): string {
-  const methodNote = zones.method === "athlete_defined"
-    ? "Based on athlete's configured values"
-    : zones.method === "estimated"
-      ? "Estimated from age (recommend athlete performs max HR test for accuracy)"
-      : "Calculated from training data";
+  const methodNote = zones.method === "lactate_anchored"
+    ? "Anchored to lab lactate test — LT1/LT2 measured thresholds (most accurate)"
+    : zones.method === "athlete_defined"
+      ? "Based on athlete's configured values"
+      : zones.method === "estimated"
+        ? "Estimated from age (recommend athlete performs max HR test for accuracy)"
+        : "Calculated from training data";
 
   const lines = [
     `HEART RATE ZONES (${methodNote}):`,
