@@ -1,5 +1,6 @@
 import { SYSTEM_PROMPT_V4, SYSTEM_PROMPT_V5, buildDataContext, calculateRecoveryState, formatRecoveryStateForPrompt, type Athlete, type StravaActivity, type UpcomingRace } from "@/lib/coaching";
 import { adaptActivities } from "@/lib/coaching/activity-adapter";
+import { getDefaultVolumeByExperience } from '@/lib/coaching/athlete-defaults';
 import { buildSessionContext, generateFinalPlan, formatSafetyDisclaimer, type SafetyCheckResult, type SessionContext } from "@/lib/coaching/safety-guardian";
 import { interpretLifelog, formatReadinessForContext } from "@/lib/lifelog";
 import { auth } from "@/lib/auth";
@@ -60,7 +61,9 @@ function createAthlete(profile?: {
         signupDate: new Date(),
         preferences: {
             preferredDays: preferences?.preferred_days || ["Mon", "Wed", "Fri", "Sun"],
-            maxWeeklyVolume_km: preferences?.max_weekly_volume_km || 80,
+            maxWeeklyVolume_km: preferences?.max_weekly_volume_km ?? getDefaultVolumeByExperience(
+                    preferences?.experience
+                ),
             injuries: preferences?.injuries || [],
             dietaryRestrictions: preferences?.dietary || [],
             experienceLevel: (preferences?.experience === "beginner" ||

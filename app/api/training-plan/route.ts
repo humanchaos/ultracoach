@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { SYSTEM_PROMPT, buildDataContext, type Athlete, type StravaActivity, type UpcomingRace } from "@/lib/coaching";
 import { adaptActivities } from "@/lib/coaching/activity-adapter";
+import { getDefaultVolumeByExperience } from '@/lib/coaching/athlete-defaults';
 import { validateWeeklyVolume, rescaleWorkouts, checkMacroDrift } from "@/lib/coaching/logic";
 import { auth } from "@/lib/auth";
 import {
@@ -93,7 +94,9 @@ function createAthlete(profile?: {
         signupDate: new Date(),
         preferences: {
             preferredDays: preferences?.preferred_days || ["Mon", "Wed", "Fri", "Sun"],
-            maxWeeklyVolume_km: preferences?.max_weekly_volume_km || 80,
+            maxWeeklyVolume_km: preferences?.max_weekly_volume_km ?? getDefaultVolumeByExperience(
+                    preferences?.experience
+                ),
             injuries: preferences?.injuries || [],
             dietaryRestrictions: preferences?.dietary || [],
             experienceLevel: (preferences?.experience === "beginner" ||
