@@ -140,7 +140,9 @@ Wenn der Plan sicher ist:
 // RECOVERY WEEK TEMPLATE (Fail-safe)
 // ============================================
 
-const RECOVERY_WEEK_TEMPLATE = `⚠️ **Automatische Sicherheits-Intervention**
+export function getRecoveryWeekTemplate(lang: 'en' | 'de' = 'en'): string {
+    if (lang === 'de') {
+        return `⚠️ **Automatische Sicherheits-Intervention**
 
 Dein ursprünglicher Plan wurde vom Safety Guardian als **hohes Risiko** eingestuft und konnte auch nach Überarbeitung nicht sicher gemacht werden. Zum Schutz vor Übertraining wird automatisch eine Recovery-Woche verordnet:
 
@@ -158,6 +160,33 @@ Dein ursprünglicher Plan wurde vom Safety Guardian als **hohes Risiko** eingest
 
 ---
 🛡️ *Diese Recovery-Woche wurde automatisch vom Safety Guardian verordnet, weil dein Trainingsplan ein persistentes Überlastungsrisiko aufwies.*`;
+    }
+
+    return `⚠️ **Automatic Safety Intervention**
+
+Your original plan was flagged as **high risk** by the Safety Guardian and could not be made safe after revision. To protect against overtraining, a recovery week has been automatically prescribed:
+
+**This Week: Recovery Week Protocol**
+
+**Monday:** Rest day 🛌
+**Tuesday:** 30min Zone 1 shuffle (max 6:30/km)
+**Wednesday:** Rest or light yoga/stretching
+**Thursday:** 25min Zone 1 easy run
+**Friday:** Rest day 🛌
+**Saturday:** 40min Zone 1-2 easy run (max HR: LT1 - 10bpm)
+**Sunday:** Rest or easy hike
+
+*Total volume: ~15–20km. Reassessed next week.*
+
+---
+🛡️ *This recovery week was automatically prescribed by the Safety Guardian because your training plan showed persistent overload risk.*`;
+}
+
+function detectLanguage(text: string): 'en' | 'de' {
+    const deMarkers = ['Montag', 'Dienstag', 'Mittwoch', 'diese Woche', 'Trainingsplan', 'Ruhetag'];
+    const deCount = deMarkers.filter(m => text.includes(m)).length;
+    return deCount >= 2 ? 'de' : 'en';
+}
 
 // ============================================
 // BUILD SESSION CONTEXT
@@ -337,8 +366,9 @@ export async function generateFinalPlan(
     // FAIL-SAFE: Persistent high risk after max iterations → auto Recovery Week
     if (safetyResult.riskLevel === 'high') {
         console.log('[Safety Guardian] 🚨 Persistent HIGH risk — deploying Recovery Week');
+        const lang = detectLanguage(currentDraft);
         return {
-            finalPlan: RECOVERY_WEEK_TEMPLATE,
+            finalPlan: getRecoveryWeekTemplate(lang),
             safetyResult,
             iterations: MAX_ITERATIONS,
             wasRecoveryWeek: true,

@@ -16,6 +16,7 @@ import {
     generateFinalPlan,
     formatGuardianFeedback,
     formatSafetyDisclaimer,
+    getRecoveryWeekTemplate,
     type StravaMetrics,
     type SafetyCheckResult,
     type SessionContext,
@@ -353,11 +354,30 @@ describe('generateFinalPlan', () => {
         );
 
         expect(result.wasRecoveryWeek).toBe(true);
-        expect(result.finalPlan).toContain('Recovery-Protokoll');
+        expect(result.finalPlan).toContain('Recovery Week');
         expect(result.safetyResult.riskLevel).toBe('high');
         expect(result.iterations).toBe(2);
         expect(regenerateFn).toHaveBeenCalledTimes(1);
 
         global.fetch = originalFetch;
+    });
+});
+
+describe('getRecoveryWeekTemplate — language support', () => {
+    it('returns English template by default', () => {
+        const result = getRecoveryWeekTemplate('en');
+        expect(result).toContain('Recovery Week');
+        expect(result).toContain('Rest day');
+    });
+
+    it('returns German template when lang=de', () => {
+        const result = getRecoveryWeekTemplate('de');
+        expect(result).toContain('Recovery-Woche');
+        expect(result).toContain('Ruhetag');
+    });
+
+    it('defaults to English when no lang provided', () => {
+        const result = getRecoveryWeekTemplate();
+        expect(result).toContain('Recovery Week');
     });
 });
