@@ -146,6 +146,7 @@ export function BlockCalendar({ block, currentWeek }: BlockCalendarProps) {
 
         for (let week = 1; week <= plan.totalWeeks; week++) {
             const phaseInfo = weekPhaseMap[week];
+            if (!phaseInfo) continue; // week falls outside all defined phases
             const weekWorkouts = (block.weekly_workouts || {})[week.toString()] || [];
             const hasWorkouts = weekWorkouts.length > 0;
 
