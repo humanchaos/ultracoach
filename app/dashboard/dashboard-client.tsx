@@ -94,6 +94,7 @@ export function DashboardClient({
 
     // Fetch active training block status with retry
     useEffect(() => {
+        setBlockFetched(false); // reset guard so WeeklyPlanView waits during re-fetch
         const fetchActiveBlock = async (retryCount = 0) => {
             try {
                 const res = await fetch('/api/training-block');
@@ -457,7 +458,6 @@ export function DashboardClient({
 
                 <div className="max-w-[1600px] mx-auto">
                     <WeeklyPlanView
-                        key={refreshKey}
                         trainingContext={trainingContext}
                         racesContext={racesContext}
                         activities={activities}
@@ -539,7 +539,6 @@ export function DashboardClient({
                     <div className="flex-1 min-h-0 min-w-0">
                         <ChatInterface
                             ref={chatRef}
-                            key={refreshKey}
                             trainingContext={fullContext}
                             activities={activities}
                             races={races}

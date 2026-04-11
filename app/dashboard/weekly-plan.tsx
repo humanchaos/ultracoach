@@ -218,7 +218,7 @@ export function WeeklyPlanView({ trainingContext, racesContext, activities, race
     }, []);
 
     useEffect(() => {
-        // If block workouts are provided, use them directly (single source of truth)
+        // Block workouts available — always use them (covers initial load AND prop updates after re-fetch)
         if (blockWorkouts && blockWorkouts.length > 0) {
             setPlan(blockWorkouts);
             setWeekSummary(weekSummaryOverride || '');
@@ -227,10 +227,10 @@ export function WeeklyPlanView({ trainingContext, racesContext, activities, race
             setHasLoaded(true);
             return;
         }
-        // Wait for parent to finish fetching block data before deciding to generate
-        // This prevents firing an AI plan generation that gets immediately replaced
+        // Wait for parent block fetch to settle before deciding to generate via AI
+        // This prevents firing an AI call that gets wasted when blockWorkouts arrive shortly after
         if (blockDataLoading) return;
-        // Only generate once per mount, not on every context change
+        // No block workouts and block fetch is done → generate via AI (only once)
         if (!hasLoaded) {
             generatePlan();
             setHasLoaded(true);
