@@ -1,6 +1,6 @@
 /**
  * Safety Guardian v2 Tests - SessionContext + Granular Response
- * 
+ *
  * Tests:
  * 1. SessionContext building
  * 2. Metric extraction (ACWR, events, filtering)
@@ -354,6 +354,7 @@ describe('generateFinalPlan', () => {
         );
 
         expect(result.wasRecoveryWeek).toBe(true);
+        // 'Dangerous plan' has no German markers → detectLanguage returns 'en' → English template
         expect(result.finalPlan).toContain('Recovery Week');
         expect(result.safetyResult.riskLevel).toBe('high');
         expect(result.iterations).toBe(2);

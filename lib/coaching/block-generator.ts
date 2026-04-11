@@ -304,6 +304,7 @@ function generateWeekWorkouts(
             hrZone: `Zone 1: ${w.intensity}`,
             targetPace: 'Very easy / No pace target',
             effortLevel: w.intensity,
+            corosZone: getCorosZone(w.type),
             rationale: `Recovery phase: ${recoveryPhase}. ${w.notes}`,
         }));
     }
@@ -442,6 +443,7 @@ function generateWeekWorkouts(
             hrZone: getPersonalizedHRZone(dayPlan.type, lactateData),  // Uses LT1/LT2 if available
             targetPace: getTargetPace(dayPlan.type, avgPace),
             effortLevel: getEffortLevel(dayPlan.type),
+            corosZone: getCorosZone(dayPlan.type),
             recovery: getRecoverySuggestion(dayPlan.type, distanceKm, elevationM),  // NEW: evening recovery
             rationale: getRationale(dayPlan.type, phase, weekNum, totalWeeks, elevationM, raceVertDensity),
         });
@@ -661,6 +663,59 @@ function getEffortLevel(type: string): string {
         'Opener': 'Easy with strides',
     };
     return efforts[type] || 'Moderate';
+}
+
+// Map UltraCoach workout types to COROS watch zone equivalents
+// COROS % Threshold HR zones: Recovery, Aerobic Endurance, Aerobic Power, Threshold, Anaerobic Endurance, Anaerobic Power
+// COROS Effort (RPE): Easy, Moderate, Hard, Very Hard, All Out
+function getCorosZone(type: string): string {
+    const typeLower = type.toLowerCase();
+
+    // Rest
+    if (typeLower === 'rest') return 'N/A';
+
+    // Zone 1 → COROS Recovery
+    if (typeLower.includes('recovery') || typeLower.includes('back-to-back')) {
+        return 'Z1 Recovery · Easy (RPE)';
+    }
+
+    // Zone 2 → COROS Aerobic Endurance
+    if (typeLower.includes('easy') || typeLower === 'long run' || typeLower.includes('medium long')) {
+        return 'Z2 Aerobic Endurance · Easy (RPE)';
+    }
+
+    // Zone 2→3 → COROS Aerobic Endurance → Aerobic Power
+    if (typeLower.includes('progression') || typeLower.includes('opener')) {
+        return 'Z2→Z3 Aerobic End. → Aerobic Pwr · Easy→Moderate (RPE)';
+    }
+
+    // Zone 3 → COROS Aerobic Power
+    if (typeLower.includes('tempo')) {
+        return 'Z3 Aerobic Power · Moderate (RPE)';
+    }
+
+    // Zone 4 → COROS Threshold
+    if (typeLower.includes('lt2') || typeLower.includes('sharpener')) {
+        return 'Z4 Threshold · Hard (RPE)';
+    }
+
+    // Zone 5 → COROS Anaerobic Endurance
+    if (typeLower.includes('interval') || typeLower.includes('vo2')) {
+        return 'Z5 Anaerobic Endurance · Very Hard (RPE)';
+    }
+
+    // Hill work → COROS Aerobic Power–Threshold
+    if (typeLower.includes('hill') || typeLower.includes('power hike')) {
+        return 'Z3–Z4 Aerobic Pwr–Threshold · Hard (RPE)';
+    }
+
+    // Race simulation → COROS Aerobic Endurance–Aerobic Power
+    if (typeLower.includes('simulation') || typeLower.includes('race pace')) {
+        return 'Z2–Z3 Aerobic End.–Aerobic Pwr · Moderate (RPE)';
+    }
+
+    // Default
+    return 'Z2 Aerobic Endurance · Easy (RPE)';
 }
 
 function getRationale(type: string, phase: string, weekNum: number, totalWeeks: number, elevationM?: number, raceVertDensity?: number): string {

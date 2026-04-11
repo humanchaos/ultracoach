@@ -10,7 +10,9 @@ import { WelcomeOverlay, useOnboarding } from "./welcome-overlay";
 import { CoachHappiness } from "./coach-happiness";
 import { BlockCalendar } from "./block-calendar";
 import { CoachLog } from "./coach-log";
-import { useState, useRef, useEffect } from "react";
+import { TodayCard } from "./today-card";
+import { ProgressChart } from "./progress-chart";
+import { useState, useRef, useEffect, useMemo } from "react";
 
 interface Session {
     user: {
@@ -123,6 +125,78 @@ export function DashboardClient({
         };
         fetchActiveBlock();
     }, [refreshKey]);
+
+    // Derive current week's workouts from block data → single source of truth for WeeklyPlanView
+    const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const currentWeekDayPlans = useMemo(() => {
+        if (!fullBlock?.weekly_workouts || !activeBlock) return undefined;
+        const weekKey = String(activeBlock.currentWeek);
+        const workouts = fullBlock.weekly_workouts[weekKey];
+        if (!workouts || workouts.length === 0) return undefined;
+
+        // Compute the Monday of the current block week
+        const blockStart = new Date(fullBlock.start_date);
+        blockStart.setHours(0, 0, 0, 0);
+        const dow = blockStart.getDay();
+        const daysSinceMonday = dow === 0 ? 6 : dow - 1;
+        const firstMonday = new Date(blockStart);
+        firstMonday.setDate(firstMonday.getDate() - daysSinceMonday);
+        const weekMonday = new Date(firstMonday);
+        weekMonday.setDate(weekMonday.getDate() + (activeBlock.currentWeek - 1) * 7);
+
+        // Map to DayPlan format (matching weekly-plan.tsx interface)
+        return DAY_NAMES.map((dayName, idx) => {
+            const workout = workouts.find((w: { day: string }) => w.day === dayName);
+            const dayDate = new Date(weekMonday);
+            dayDate.setDate(dayDate.getDate() + idx);
+            const dateStr = dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+            if (!workout || workout.type?.toLowerCase() === 'rest') {
+                return {
+                    day: dayName.slice(0, 3).toUpperCase(),
+                    date: dateStr,
+                    type: 'rest' as const,
+                    title: 'Rest',
+                    description: workout?.description || 'Full rest day',
+                    intensity: 'easy' as const,
+                    rationale: 'Recovery from training load',
+                };
+            }
+
+            // Map block workout type to DayPlan type
+            const typeMap: Record<string, string> = {
+                'Long Run': 'long', 'Easy Run': 'run', 'Easy': 'run',
+                'Recovery': 'recovery', 'Tempo': 'tempo', 'Intervals': 'intervals',
+                'Cross-Training': 'cross', 'Hills': 'run', 'Fartlek': 'intervals',
+            };
+            const intensityMap: Record<string, string> = {
+                'Long Run': 'moderate', 'Easy Run': 'easy', 'Easy': 'easy',
+                'Recovery': 'easy', 'Tempo': 'hard', 'Intervals': 'hard',
+                'Cross-Training': 'easy', 'Hills': 'hard', 'Fartlek': 'moderate',
+            };
+
+            return {
+                day: dayName.slice(0, 3).toUpperCase(),
+                date: dateStr,
+                type: (typeMap[workout.type] || 'run') as "run" | "rest" | "cross" | "long" | "recovery" | "tempo" | "intervals",
+                title: workout.type || 'Workout',
+                description: workout.description || '',
+                distance_km: workout.distance_km,
+                elevation_m: workout.elevation_m,
+                duration: workout.duration_min ? `${workout.duration_min} min` : undefined,
+                intensity: (intensityMap[workout.type] || 'moderate') as "easy" | "moderate" | "hard",
+                hrZone: workout.hrZone,
+                targetPace: workout.targetPace,
+                effortLevel: workout.effortLevel,
+                rationale: `Week ${activeBlock.currentWeek} - ${activeBlock.phase} phase`,
+            };
+        });
+    }, [fullBlock, activeBlock]);
+
+    const currentWeekSummary = useMemo(() => {
+        if (!activeBlock || !fullBlock) return undefined;
+        return `Week ${activeBlock.currentWeek} of ${activeBlock.totalWeeks} - ${fullBlock.raceName || 'Race'} · ${activeBlock.phase} phase`;
+    }, [activeBlock, fullBlock]);
 
     // Run compliance audit on mount (if block exists and audit is due)
     useEffect(() => {
@@ -375,6 +449,8 @@ export function DashboardClient({
                         racesContext={racesContext}
                         activities={activities}
                         races={races}
+                        blockWorkouts={currentWeekDayPlans}
+                        weekSummaryOverride={currentWeekSummary}
                         onWorkoutsSaved={() => {
                             // Refresh block data to update calendar with new workouts
                             setRefreshKey(prev => prev + 1);
@@ -398,8 +474,17 @@ export function DashboardClient({
                 <div className="flex flex-col lg:flex-row gap-4 h-full">
                     {/* Left Column - Next Race & Recent Runs */}
                     <div className="lg:w-80 shrink-0 flex flex-col gap-4 overflow-auto">
+                        {/* Today's Card - Hero */}
+                        <TodayCard
+                            activities={activities}
+                            onAskCoach={(msg) => chatRef.current?.sendMessage(msg)}
+                        />
+
                         {/* Next Race */}
                         <NextRace races={races} onRacesChange={handleRacesChange} hasActiveBlock={!!activeBlock} />
+
+                        {/* Weekly Progress Chart */}
+                        <ProgressChart activities={activities} />
 
                         {/* Recent Runs */}
                         <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl border border-white/10 p-4 flex-1">

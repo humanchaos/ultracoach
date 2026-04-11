@@ -40,18 +40,28 @@ export async function GET() {
 
         if (block) {
             // CRITICAL: Recalculate totalWeeks based on actual dates (single source of truth)
+            // Must use Monday-aligned weeks to match block-calendar.tsx grid
             const now = new Date();
             const raceDate = new Date(block.end_date);
             const startDate = new Date(block.start_date);
 
-            // Calculate actual weeks from start to race
-            const msFromStartToRace = raceDate.getTime() - startDate.getTime();
+            // Find the Monday of the week containing the start date (matches block-calendar.tsx)
+            const startMonday = new Date(startDate);
+            startMonday.setHours(0, 0, 0, 0);
+            const dow = startMonday.getDay();
+            const daysSinceMonday = dow === 0 ? 6 : dow - 1;
+            startMonday.setDate(startMonday.getDate() - daysSinceMonday);
+
+            // Calculate actual weeks from start-Monday to race
+            const msFromStartToRace = raceDate.getTime() - startMonday.getTime();
             const actualTotalWeeks = Math.max(1, Math.ceil(msFromStartToRace / (7 * 24 * 60 * 60 * 1000)));
 
-            // Calculate current week
-            const msFromStart = now.getTime() - startDate.getTime();
+            // Calculate current week using Monday-aligned boundaries
+            const todayMidnight = new Date(now);
+            todayMidnight.setHours(0, 0, 0, 0);
+            const msFromStart = todayMidnight.getTime() - startMonday.getTime();
             const currentWeek = Math.max(1, Math.min(
-                Math.ceil(msFromStart / (7 * 24 * 60 * 60 * 1000)),
+                Math.floor(msFromStart / (7 * 24 * 60 * 60 * 1000)) + 1,
                 actualTotalWeeks
             ));
 

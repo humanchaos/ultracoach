@@ -90,8 +90,13 @@ export function formatTrainingLog(activities: StravaActivity[]): string {
 
     const details = [pace, hr, elev].filter(Boolean).join(" | ");
 
+    // Equivalent flat distance for hilly runs  (+100m gain ≈ +1km flat)
+    const equivFlat = activity.elevation_gain_m
+      ? ` (≈${(activity.distance_km + activity.elevation_gain_m / 100).toFixed(1)}km equiv flat)`
+      : '';
+
     lines.push(`• ${date}: ${activity.name}`);
-    lines.push(`  ${distance}km in ${duration}${details ? ` (${details})` : ''}`);
+    lines.push(`  ${distance}km in ${duration}${details ? ` (${details})` : ''}${equivFlat}`);
   }
 
   // Add summary statistics
@@ -125,7 +130,7 @@ export function formatUpcomingRaces(races: UpcomingRace[]): string {
     lines.push(`### ${race.name} [${race.priority}-priority]`);
     lines.push(`Date: ${formatDate(raceDate)} (${daysUntil} days / ${weeksUntil} weeks away)`);
     lines.push(`Distance: ${race.distance_km}km`);
-    
+
     // Add elevation profile if available
     if (race.elevation_gain_m || race.elevation_loss_m) {
       const gain = race.elevation_gain_m || 0;
@@ -133,7 +138,7 @@ export function formatUpcomingRaces(races: UpcomingRace[]): string {
       const vertDensity = race.distance_km > 0 ? Math.round(gain / race.distance_km) : 0;
       lines.push(`Elevation: +${gain}m / -${loss}m (${vertDensity}m/km)`);
     }
-    
+
     if (race.terrain) lines.push(`Terrain: ${race.terrain}`);
     if (race.goalTime) lines.push(`Goal time: ${race.goalTime}`);
     lines.push(``);
@@ -145,9 +150,10 @@ export function formatUpcomingRaces(races: UpcomingRace[]): string {
 export function formatVolumeSummary(activities: StravaActivity[]): string {
   const now = new Date();
   const runs = activities.filter(a => a.type === "Run");
+  const nonRuns = activities.filter(a => a.type !== "Run");
 
   // Calculate weekly volumes for the last 4 weeks
-  const weeks: { start: Date; end: Date; volume: number; count: number }[] = [];
+  const weeks: { start: Date; end: Date; volume: number; count: number; crossTrainKm: number; elevationM: number }[] = [];
 
   for (let i = 0; i < 4; i++) {
     const weekEnd = new Date(now);
@@ -163,11 +169,25 @@ export function formatVolumeSummary(activities: StravaActivity[]): string {
       return d >= weekStart && d <= weekEnd;
     });
 
+    const weekNonRuns = nonRuns.filter(a => {
+      const d = new Date(a.date);
+      return d >= weekStart && d <= weekEnd;
+    });
+
+    const crossTrainKm = weekNonRuns.reduce((sum, a) => {
+      const multiplier = a.type === "Ride" ? 0.3 : a.type === "Swim" ? 0.4 : a.type === "Hike" ? 0.8 : 0;
+      return sum + a.distance_km * multiplier;
+    }, 0);
+
+    const elevationM = weekRuns.reduce((sum, a) => sum + (a.elevation_gain_m || 0), 0);
+
     weeks.push({
       start: weekStart,
       end: weekEnd,
       volume: weekRuns.reduce((sum, a) => sum + a.distance_km, 0),
       count: weekRuns.length,
+      crossTrainKm,
+      elevationM,
     });
   }
 
@@ -175,7 +195,9 @@ export function formatVolumeSummary(activities: StravaActivity[]): string {
 
   weeks.forEach((week, i) => {
     const label = i === 0 ? "This week" : i === 1 ? "Last week" : `${i + 1} weeks ago`;
-    lines.push(`${label}: ${week.volume.toFixed(1)}km across ${week.count} runs`);
+    const crossNote = week.crossTrainKm > 0 ? ` + ${week.crossTrainKm.toFixed(1)}km cross-train equiv` : '';
+    const elevNote = week.elevationM > 0 ? ` | ${week.elevationM}m vert` : '';
+    lines.push(`${label}: ${week.volume.toFixed(1)}km running${crossNote} across ${week.count} runs${elevNote}`);
   });
 
   // Find longest run in past 30 days

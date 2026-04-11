@@ -5,7 +5,7 @@
 export * from "./types";
 
 // System prompt (the coach's personality and expertise)
-export { SYSTEM_PROMPT, SYSTEM_PROMPT_V4, SYSTEM_PROMPT_V5 } from "./system-prompt";
+export { SYSTEM_PROMPT, SYSTEM_PROMPT_V4, SYSTEM_PROMPT_V5, SYSTEM_PROMPT_V6 } from "./system-prompt";
 
 // Data formatting (facts only, no constraints)
 export {

@@ -1,12 +1,14 @@
-import { SYSTEM_PROMPT_V4, SYSTEM_PROMPT_V5, buildDataContext, calculateRecoveryState, formatRecoveryStateForPrompt, type Athlete, type StravaActivity, type UpcomingRace } from "@/lib/coaching";
+import { SYSTEM_PROMPT_V4, SYSTEM_PROMPT_V5, SYSTEM_PROMPT_V6, buildDataContext, calculateRecoveryState, formatRecoveryStateForPrompt, type Athlete, type StravaActivity, type UpcomingRace } from "@/lib/coaching";
 import { adaptActivities } from "@/lib/coaching/activity-adapter";
 import { getDefaultVolumeByExperience } from '@/lib/coaching/athlete-defaults';
 import { buildSessionContext, generateFinalPlan, formatSafetyDisclaimer, type SafetyCheckResult, type SessionContext } from "@/lib/coaching/safety-guardian";
 import { interpretLifelog, formatReadinessForContext } from "@/lib/lifelog";
 import { auth } from "@/lib/auth";
-import { getRecentJournal, formatJournalForAI, upsertJournalEntry, getActiveTrainingBlock, getCurrentWeekInBlock, formatBlockForAIv2, getRaceById, getLactateTest, logSafetyCheck } from "@/lib/db";
+import { getRecentJournal, formatJournalForAI, upsertJournalEntry, getActiveTrainingBlock, getCurrentWeekInBlock, formatBlockForAIv2, getRaceById, getLactateTest, logSafetyCheck, type JournalEntry } from "@/lib/db";
 
 export const maxDuration = 45; // Increased to accommodate Safety Guardian loop
+
+const isDev = process.env.NODE_ENV !== 'production';
 
 // Adapter: Convert races to v3 format
 function adaptRaces(races: Array<{
@@ -92,7 +94,7 @@ export async function POST(req: Request) {
         } = body;
 
         const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-        console.log("[Chat API v10] Received", messages.length, "messages");
+        if (isDev) console.log("[Chat API v10] Received", messages.length, "messages");
 
         if (!apiKey) {
             return new Response(
@@ -106,25 +108,25 @@ export async function POST(req: Request) {
         const v3Races = races ? adaptRaces(races) : [];
         const athlete = createAthlete(athleteProfile, athletePreferences);
 
-        // DEBUG: Log ALL activities being processed
-        console.log("[Chat API v10] 📋 ALL ACTIVITIES RECEIVED:", v3Activities.length);
-        v3Activities.forEach((a, i) => {
-            const dateStr = a.date instanceof Date ? a.date.toISOString().split('T')[0] : String(a.date);
-            console.log(`  [${i}] ${dateStr} - ${a.name} (${a.distance_km}km)`);
-        });
-
-        // DEBUG: Show activities from last 14 days specifically
-        const twoWeeksAgo = new Date();
-        twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-        const recentActivities = v3Activities.filter(a => {
-            const actDate = a.date instanceof Date ? a.date : new Date(a.date);
-            return actDate >= twoWeeksAgo;
-        });
-        console.log(`[Chat API v10] 📅 Activities in last 14 days: ${recentActivities.length}`);
-        recentActivities.forEach(a => {
-            const dateStr = a.date instanceof Date ? a.date.toISOString().split('T')[0] : String(a.date);
-            console.log(`  - ${dateStr}: ${a.name} (${a.distance_km}km)`);
-        });
+        // DEBUG: Log activities (dev only)
+        if (isDev) {
+            console.log("[Chat API v10] 📋 ALL ACTIVITIES RECEIVED:", v3Activities.length);
+            v3Activities.forEach((a, i) => {
+                const dateStr = a.date instanceof Date ? a.date.toISOString().split('T')[0] : String(a.date);
+                console.log(`  [${i}] ${dateStr} - ${a.name} (${a.distance_km}km)`);
+            });
+            const twoWeeksAgo = new Date();
+            twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+            const recentActivities = v3Activities.filter(a => {
+                const actDate = a.date instanceof Date ? a.date : new Date(a.date);
+                return actDate >= twoWeeksAgo;
+            });
+            console.log(`[Chat API v10] 📅 Activities in last 14 days: ${recentActivities.length}`);
+            recentActivities.forEach(a => {
+                const dateStr = a.date instanceof Date ? a.date.toISOString().split('T')[0] : String(a.date);
+                console.log(`  - ${dateStr}: ${a.name} (${a.distance_km}km)`);
+            });
+        }
 
         // Get the latest user message for lifelog interpretation
         const latestMessage = messages[messages.length - 1]?.content || "";
@@ -139,7 +141,7 @@ export async function POST(req: Request) {
             })),
         ]);
 
-        console.log("[Chat API v10] Two-pass results:", {
+        if (isDev) console.log("[Chat API v10] Two-pass results:", {
             hasLifelog: !!lifelogResult,
             recoveryPhase: recoveryState.phase,
             inRecoveryWindow: recoveryState.inRecoveryWindow,
@@ -199,39 +201,36 @@ export async function POST(req: Request) {
                         custom_data: customData,
                     });
 
-                    console.log('[Chat API] 📝 Lifelog v2: Saved', lifelogResult.mentions.length, 'mentions to journal');
+                    if (isDev) console.log('[Chat API] 📝 Lifelog v2: Saved', lifelogResult.mentions.length, 'mentions to journal');
                 }
             } catch (saveError) {
                 console.warn('[Chat API] Could not save lifelog to journal:', saveError);
             }
         }
 
-        // DEBUG: ALWAYS log recovery state for diagnosis
-        console.log(`[Chat API] ⚡ RECOVERY STATE: phase=${recoveryState.phase}, inWindow=${recoveryState.inRecoveryWindow}, days=${recoveryState.daysSinceEffort || 'N/A'}`);
-
-        if (recoveryState.inRecoveryWindow) {
-            console.log("[Chat API v10] 🔴 ACTIVE RECOVERY:", {
-                effortName: recoveryState.effortName,
-                effortType: recoveryState.effortType,
-                effortDate: recoveryState.effortDate,
-                daysSinceEffort: recoveryState.daysSinceEffort,
-                phase: recoveryState.phase,
-                signalOverrides: recoveryState.signalOverrides,
-            });
-        } else {
-            console.log("[Chat API v10] ✅ NOT IN RECOVERY WINDOW - normal training mode");
-        }
-
-        // DEBUG: Log activities that could trigger recovery detection (>40km runs)
-        const potentialMajorEfforts = v3Activities.filter(a => a.distance_km >= 40);
-        if (potentialMajorEfforts.length > 0) {
-            console.log("[Chat API v10] 📊 Potential major efforts in activities:",
-                potentialMajorEfforts.map(a => ({
-                    name: a.name,
-                    date: a.date instanceof Date ? a.date.toISOString() : String(a.date),
-                    distance_km: a.distance_km,
-                }))
-            );
+        // Recovery state logging (dev only)
+        if (isDev) {
+            console.log(`[Chat API] ⚡ RECOVERY STATE: phase=${recoveryState.phase}, inWindow=${recoveryState.inRecoveryWindow}, days=${recoveryState.daysSinceEffort || 'N/A'}`);
+            if (recoveryState.inRecoveryWindow) {
+                console.log("[Chat API v10] 🔴 ACTIVE RECOVERY:", {
+                    effortName: recoveryState.effortName,
+                    effortType: recoveryState.effortType,
+                    effortDate: recoveryState.effortDate,
+                    daysSinceEffort: recoveryState.daysSinceEffort,
+                    phase: recoveryState.phase,
+                    signalOverrides: recoveryState.signalOverrides,
+                });
+            }
+            const potentialMajorEfforts = v3Activities.filter(a => a.distance_km >= 40);
+            if (potentialMajorEfforts.length > 0) {
+                console.log("[Chat API v10] 📊 Potential major efforts:",
+                    potentialMajorEfforts.map(a => ({
+                        name: a.name,
+                        date: a.date instanceof Date ? a.date.toISOString() : String(a.date),
+                        distance_km: a.distance_km,
+                    }))
+                );
+            }
         }
 
         // BUILD CONTEXT (order matters for v10 gate sequence!)
@@ -246,35 +245,61 @@ export async function POST(req: Request) {
         }
 
         // 3. Base data context (athlete profile, training log, races, coaching signals)
-        // Fetch active training block for workout analysis AND full context
+        // Fetch training block, journal, and lactate in PARALLEL (all independent reads)
         let trainingBlockData = undefined;
         let trainingBlockContext = '';
-        try {
-            if (userStravaId) {
-                const block = await getActiveTrainingBlock(userStravaId);
-                if (block) {
-                    // Get the race for this block (if any)
-                    const race = block.race_id ? await getRaceById(block.race_id) : undefined;
 
-                    // Format the full block context for the AI
-                    trainingBlockContext = formatBlockForAIv2(block, race || undefined);
+        if (userStravaId) {
+            const [block, journalEntries, lactateTest] = await Promise.all([
+                getActiveTrainingBlock(userStravaId).catch(err => { console.warn('[Chat API v10] Could not load training block:', err); return null; }),
+                getRecentJournal(userStravaId, 90).catch(err => { console.warn('[Chat API v10] Could not load journal history:', err); return [] as JournalEntry[]; }),
+                getLactateTest(userStravaId).catch(err => { console.warn('[Chat API v10] Could not load lactate data:', err); return null; }),
+            ]);
+
+            // Process training block
+            if (block) {
+                const race = block.race_id ? await getRaceById(block.race_id) : undefined;
+                trainingBlockContext = formatBlockForAIv2(block, race || undefined);
+                if (isDev) {
                     console.log(`[Chat API v10] 📊 Loaded training block context (week ${getCurrentWeekInBlock(block)})`);
                     console.log(`[Chat API v10] 📋 TODAY marker present:`, trainingBlockContext.includes('← TODAY'));
-                    console.log(`[Chat API v10] 📋 TODAY'S PRESCRIBED WORKOUT present:`, trainingBlockContext.includes('TODAY\'S PRESCRIBED WORKOUT'));
+                }
 
-
-                    // Also pass to buildDataContext for workout analysis
-                    if (block.weekly_workouts) {
-                        trainingBlockData = {
-                            weeklyWorkouts: block.weekly_workouts,
-                            startDate: block.start_date,
-                            currentWeek: getCurrentWeekInBlock(block),
-                        };
-                    }
+                if (block.weekly_workouts) {
+                    trainingBlockData = {
+                        weeklyWorkouts: block.weekly_workouts,
+                        startDate: block.start_date,
+                        currentWeek: getCurrentWeekInBlock(block),
+                    };
                 }
             }
-        } catch (blockError) {
-            console.warn('[Chat API v10] Could not load training block:', blockError);
+
+            // Process journal (5. LIFELOG HISTORY for pattern analysis)
+            if (journalEntries && journalEntries.length > 0) {
+                const journalContext = formatJournalForAI(journalEntries);
+                if (journalContext) {
+                    contextSections.push(journalContext);
+                    if (isDev) console.log(`[Chat API v10] Loaded ${journalEntries.length} journal entries for context`);
+                }
+            }
+
+            // Process lactate test (6. PERSONALIZED HR ZONES)
+            if (lactateTest && (lactateTest.z1_hr || lactateTest.aerobic_threshold_hr)) {
+                const zoneContext = `## PERSONALIZED HR ZONES (from lab test data)
+
+**IMPORTANT: Always use these exact zone values when prescribing workouts.**
+
+${lactateTest.z1_hr ? `- Zone 1 (Recovery): ${lactateTest.z1_hr} bpm` : ''}
+${lactateTest.z2_hr ? `- Zone 2 (Aerobic): ${lactateTest.z2_hr} bpm` : ''}
+${lactateTest.z3_hr ? `- Zone 3 (Tempo): ${lactateTest.z3_hr} bpm` : ''}
+${lactateTest.z4_hr ? `- Zone 4 (Threshold): ${lactateTest.z4_hr} bpm` : ''}
+${lactateTest.z5_hr ? `- Zone 5 (VO2max): ${lactateTest.z5_hr} bpm` : ''}
+${lactateTest.aerobic_threshold_hr ? `- LT1 (Aerobic Threshold): ${lactateTest.aerobic_threshold_hr} bpm` : ''}
+${lactateTest.anaerobic_threshold_hr ? `- LT2 (Anaerobic Threshold): ${lactateTest.anaerobic_threshold_hr} bpm` : ''}
+${lactateTest.max_hr ? `- Max HR: ${lactateTest.max_hr} bpm` : ''}`;
+                contextSections.push(zoneContext);
+                if (isDev) console.log(`[Chat API v10] Loaded personalized HR zones: Z2=${lactateTest.z2_hr || 'calculated'}`);
+            }
         }
 
         const dataContext = buildDataContext({
@@ -296,57 +321,21 @@ export async function POST(req: Request) {
             contextSections.push(`## ADDITIONAL CONTEXT FROM DASHBOARD\n\n${trainingContext}`);
         }
 
-        // 5. LIFELOG HISTORY (for pattern analysis - last 90 days)
-        try {
-            if (userStravaId) {
-                const journalEntries = await getRecentJournal(userStravaId, 90);
-                const journalContext = formatJournalForAI(journalEntries);
-                if (journalContext) {
-                    contextSections.push(journalContext);
-                    console.log(`[Chat API v10] Loaded ${journalEntries.length} journal entries for context`);
-                }
-            }
-        } catch (journalError) {
-            console.warn('[Chat API v10] Could not load journal history:', journalError);
-        }
-
-        // 6. PERSONALIZED HR ZONES (from saved lactate test data)
-        try {
-            if (userStravaId) {
-                const lactateTest = await getLactateTest(userStravaId);
-                if (lactateTest && (lactateTest.z1_hr || lactateTest.aerobic_threshold_hr)) {
-                    const zoneContext = `## PERSONALIZED HR ZONES (from lab test data)
-
-**IMPORTANT: Always use these exact zone values when prescribing workouts.**
-
-${lactateTest.z1_hr ? `- Zone 1 (Recovery): ${lactateTest.z1_hr} bpm` : ''}
-${lactateTest.z2_hr ? `- Zone 2 (Aerobic): ${lactateTest.z2_hr} bpm` : ''}
-${lactateTest.z3_hr ? `- Zone 3 (Tempo): ${lactateTest.z3_hr} bpm` : ''}
-${lactateTest.z4_hr ? `- Zone 4 (Threshold): ${lactateTest.z4_hr} bpm` : ''}
-${lactateTest.z5_hr ? `- Zone 5 (VO2max): ${lactateTest.z5_hr} bpm` : ''}
-${lactateTest.aerobic_threshold_hr ? `- LT1 (Aerobic Threshold): ${lactateTest.aerobic_threshold_hr} bpm` : ''}
-${lactateTest.anaerobic_threshold_hr ? `- LT2 (Anaerobic Threshold): ${lactateTest.anaerobic_threshold_hr} bpm` : ''}
-${lactateTest.max_hr ? `- Max HR: ${lactateTest.max_hr} bpm` : ''}`;
-                    contextSections.push(zoneContext);
-                    console.log(`[Chat API v10] Loaded personalized HR zones: Z2=${lactateTest.z2_hr || 'calculated'}`);
-                }
-            }
-        } catch (lactateError) {
-            console.warn('[Chat API v10] Could not load lactate data:', lactateError);
-        }
-
         const finalContext = contextSections.join('\n\n---\n\n');
 
-        // Select prompt version (v5 is default, set PROMPT_VERSION=v4 to rollback)
-        const promptVersion = process.env.PROMPT_VERSION || 'v5';
-        const activePrompt = promptVersion === 'v4' ? SYSTEM_PROMPT_V4 : SYSTEM_PROMPT_V5;
+        // Select prompt version (v6 budget-based is default)
+        const promptVersion = process.env.PROMPT_VERSION || 'v6';
+        const activePrompt = promptVersion === 'v4' ? SYSTEM_PROMPT_V4
+            : promptVersion === 'v5' ? SYSTEM_PROMPT_V5
+                : SYSTEM_PROMPT_V6;
 
         // Combine system prompt with data context
         const systemPrompt = `${activePrompt}\n\n---\n\n${finalContext}`;
-        console.log(`[Chat API] Using prompt ${promptVersion}`);
-        console.log("[Chat API] Context includes recovery:", finalContext.includes("RECOVERY STATUS"));
-        console.log("[Chat API] Context includes readiness:", finalContext.includes("READINESS PROFILE"));
-        console.log("[Chat API] Context includes training block:", finalContext.includes("## TRAINING BLOCK"));
+        if (isDev) {
+            console.log(`[Chat API] Using prompt ${promptVersion}`);
+            console.log("[Chat API] Context includes recovery:", finalContext.includes("RECOVERY STATUS"));
+            console.log("[Chat API] Context includes training block:", finalContext.includes("## TRAINING BLOCK"));
+        }
 
         // Convert messages to Gemini format
         const contents = messages
@@ -363,29 +352,32 @@ ${lactateTest.max_hr ? `- Max HR: ${lactateTest.max_hr} bpm` : ''}`;
             generationConfig: {
                 temperature: 0.7,
                 topP: 0.9,
-                maxOutputTokens: 1000, // Cost Guard: Cap at 1000 tokens per message
+                maxOutputTokens: 2000,
             },
         };
 
         // Cost Guard: Log payload size and warn if too large
         const payloadJson = JSON.stringify(requestPayload);
         const payloadSizeKb = payloadJson.length / 1024;
-        console.log(`[Chat API] Payload size: ${payloadSizeKb.toFixed(1)}kb`);
+        if (isDev) console.log(`[Chat API] Payload size: ${payloadSizeKb.toFixed(1)}kb`);
         if (payloadSizeKb > 50) {
             console.warn(`[Chat API] ⚠️ LARGE PAYLOAD WARNING: ${payloadSizeKb.toFixed(1)}kb exceeds 50kb threshold!`);
         }
 
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`,
             {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": apiKey,
+                },
                 body: payloadJson,
             }
         );
 
         const data = await response.json();
-        console.log("[Chat API] Gemini response status:", response.status);
+        if (isDev) console.log("[Chat API] Gemini response status:", response.status);
 
         if (!response.ok) {
             console.error("[Chat API] Gemini error:", data);
@@ -399,7 +391,7 @@ ${lactateTest.max_hr ? `- Max HR: ${lactateTest.max_hr} bpm` : ''}`;
 
         // ============ SAFETY GUARDIAN v2: SessionContext + Orchestration ============
 
-        // userStravaId already resolved at top of handler
+        // userStravaId already resolved from auth() at top of handler
 
         // Build SessionContext — Single Source of Truth for Coach & Guardian
         const nextRace = v3Races.length > 0 ? {
@@ -429,7 +421,7 @@ ${lactateTest.max_hr ? `- Max HR: ${lactateTest.max_hr} bpm` : ''}`;
             }
         );
 
-        console.log(`[Safety Guardian v2] SessionContext built: ACWR=${sessionContext.stravaMetrics.acwr?.toFixed(2)}, sleep=${sessionContext.biometrics.sleepScore}`);
+        if (isDev) console.log(`[Safety Guardian v2] SessionContext built: ACWR=${sessionContext.stravaMetrics.acwr?.toFixed(2)}, sleep=${sessionContext.biometrics.sleepScore}`);
 
         // Regeneration function: calls Coach AI again with Guardian feedback
         const regenerateFn = async (feedback: string): Promise<string> => {
@@ -440,17 +432,20 @@ ${lactateTest.max_hr ? `- Max HR: ${lactateTest.max_hr} bpm` : ''}`;
             ];
 
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`,
                 {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-goog-api-key': apiKey,
+                    },
                     body: JSON.stringify({
                         contents: regenerateContents,
                         systemInstruction: { parts: [{ text: systemPrompt }] },
                         generationConfig: {
                             temperature: 0.6,
                             topP: 0.85,
-                            maxOutputTokens: 1000,
+                            maxOutputTokens: 2000,
                         },
                     }),
                 }
@@ -484,7 +479,7 @@ ${lactateTest.max_hr ? `- Max HR: ${lactateTest.max_hr} bpm` : ''}`;
         );
 
         const finalResponse = guardianResult.finalPlan;
-        console.log(`[Safety Guardian v2] Result: iterations=${guardianResult.iterations}, riskLevel=${guardianResult.safetyResult.riskLevel}, recoveryWeek=${guardianResult.wasRecoveryWeek}`);
+        if (isDev) console.log(`[Safety Guardian v2] Result: iterations=${guardianResult.iterations}, riskLevel=${guardianResult.safetyResult.riskLevel}, recoveryWeek=${guardianResult.wasRecoveryWeek}`);
 
         // Return as streaming format that our client expects
         const encoder = new TextEncoder();

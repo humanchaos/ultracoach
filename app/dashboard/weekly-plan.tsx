@@ -26,6 +26,7 @@ interface DayPlan {
     effortLevel?: string;  // e.g., "Conversational"
     nutrition?: string;    // e.g., "Eat 2h before. Bring gel for runs >1h"
     recovery?: string;     // NEW: Evening recovery suggestions
+    corosZone?: string;    // COROS watch equivalent zone label
     rationale: string;
     modification?: WorkoutModification; // Bio-feedback adjustment
 }
@@ -52,6 +53,8 @@ interface WeeklyPlanProps {
     activities?: Activity[];
     races?: Race[];
     onWorkoutsSaved?: () => void;
+    blockWorkouts?: DayPlan[];  // Pre-loaded from training block (single source of truth)
+    weekSummaryOverride?: string; // Summary from training block
 }
 
 function parsePlanDate(dateStr: string): Date {
@@ -95,7 +98,7 @@ function getDayStatus(dateStr: string): "past" | "today" | "future" {
     return "future";
 }
 
-export function WeeklyPlanView({ trainingContext, racesContext, activities, races, onWorkoutsSaved }: WeeklyPlanProps) {
+export function WeeklyPlanView({ trainingContext, racesContext, activities, races, onWorkoutsSaved, blockWorkouts, weekSummaryOverride }: WeeklyPlanProps) {
     const [plan, setPlan] = useState<DayPlan[]>([]);
     const [weekSummary, setWeekSummary] = useState("");
     const [isLoading, setIsLoading] = useState(true);
@@ -114,12 +117,21 @@ export function WeeklyPlanView({ trainingContext, racesContext, activities, race
     }, []);
 
     useEffect(() => {
+        // If block workouts are provided, use them directly (single source of truth)
+        if (blockWorkouts && blockWorkouts.length > 0) {
+            setPlan(blockWorkouts);
+            setWeekSummary(weekSummaryOverride || '');
+            setFromStorage(true);
+            setIsLoading(false);
+            setHasLoaded(true);
+            return;
+        }
         // Only generate once per mount, not on every context change
         if (!hasLoaded) {
             generatePlan();
             setHasLoaded(true);
         }
-    }, [hasLoaded]);
+    }, [hasLoaded, blockWorkouts]);
 
     const generatePlan = async (mode: 'normal' | 'force' | 'enhance' = 'normal') => {
         setIsLoading(true);
@@ -361,7 +373,7 @@ export function WeeklyPlanView({ trainingContext, racesContext, activities, race
                     <p className="text-sm text-gray-300 mb-3">{selectedDay.description}</p>
 
                     {/* Training Targets */}
-                    {(selectedDay.hrZone || selectedDay.targetPace || selectedDay.effortLevel || selectedDay.elevation_m) && (
+                    {(selectedDay.hrZone || selectedDay.targetPace || selectedDay.effortLevel || selectedDay.elevation_m || selectedDay.corosZone) && (
                         <div className="bg-slate-700/50 rounded-lg p-3 mb-3 space-y-1.5">
                             {selectedDay.hrZone && (
                                 <div className="flex items-center gap-2 text-sm">
@@ -389,6 +401,13 @@ export function WeeklyPlanView({ trainingContext, racesContext, activities, race
                                     <span className="text-green-400">⛰️</span>
                                     <span className="text-gray-400">Vert:</span>
                                     <span className="text-green-300 font-medium">+{selectedDay.elevation_m}m</span>
+                                </div>
+                            )}
+                            {selectedDay.corosZone && selectedDay.corosZone !== 'N/A' && (
+                                <div className="flex items-center gap-2 text-sm">
+                                    <span className="text-cyan-400">⌚</span>
+                                    <span className="text-gray-400">COROS:</span>
+                                    <span className="text-cyan-300 font-medium">{selectedDay.corosZone}</span>
                                 </div>
                             )}
                         </div>

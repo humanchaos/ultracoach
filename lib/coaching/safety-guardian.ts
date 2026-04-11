@@ -1,11 +1,11 @@
 /**
  * Safety Guardian v2 - Adversarial AI for Training Plan Validation
- * 
+ *
  * v2 Enhancements:
  * - SessionContext: Single Source of Truth shared by Coach and Guardian
  * - Granular response: riskLevel, flaggedSessions, adjustmentDirectives
  * - Auto Recovery-Week fail-safe for persistent high risk
- * 
+ *
  * Key safety checks:
  * 1. ACWR: Flag if weekly volume increases >10% vs. 4-week average
  * 2. Post-Race Recovery: Flag intensity within 48h of ultras (>25km)
@@ -25,8 +25,14 @@ export interface SessionContext {
 
     /** Biometric signals */
     biometrics: {
-        restingHrTrend?: string;      // e.g., "+12bpm", "-5bpm"
+        restingHrTrend?: string;      // Legacy: e.g., "+12bpm", "-5bpm"
+        restingHr?: {                 // Structured numeric resting HR
+            current: number;
+            sevenDayAvg: number;
+            delta: number;            // positive = elevated
+        };
         sleepScore?: 'Good' | 'Fair' | 'Poor';
+        sleepHours?: number;          // Numeric sleep hours for granular decisions
         hrVariability?: string;       // e.g., "declining"
     };
 
@@ -207,7 +213,9 @@ export function buildSessionContext(
     options?: {
         userStravaId?: string;
         restingHrTrend?: string;
+        restingHr?: { current: number; sevenDayAvg: number; delta: number };
         sleepScore?: 'Good' | 'Fair' | 'Poor';
+        sleepHours?: number;
         nextRace?: { name: string; date: Date; distance_km: number };
         trainingPhase?: string;
         weeklyVolumeTarget_km?: number;
@@ -220,7 +228,9 @@ export function buildSessionContext(
         stravaMetrics,
         biometrics: {
             restingHrTrend: options?.restingHrTrend,
+            restingHr: options?.restingHr,
             sleepScore: options?.sleepScore,
+            sleepHours: options?.sleepHours,
         },
         goals: {
             nextRace: options?.nextRace,
@@ -248,10 +258,13 @@ export async function runSafetyCheck(
 
     try {
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`,
             {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': apiKey,
+                },
                 body: JSON.stringify({
                     contents: [{
                         role: 'user',
@@ -433,11 +446,15 @@ function buildGuardianContext(ctx: SessionContext, coachDraft: string): string {
 
     // Biometrics
     const bio = ctx.biometrics;
-    if (bio.restingHrTrend || bio.sleepScore) {
+    if (bio.restingHrTrend || bio.restingHr || bio.sleepScore) {
         lines.push('');
         lines.push('### Biometrische Signale');
         if (bio.restingHrTrend) lines.push(`Ruhe-HF Trend: ${bio.restingHrTrend}`);
+        if (bio.restingHr) {
+            lines.push(`Ruhe-HF aktuell: ${bio.restingHr.current} bpm (7d-Ø: ${bio.restingHr.sevenDayAvg} bpm, Δ${bio.restingHr.delta > 0 ? '+' : ''}${bio.restingHr.delta} bpm)`);
+        }
         if (bio.sleepScore) lines.push(`Schlaf-Score: ${bio.sleepScore}`);
+        if (bio.sleepHours !== undefined) lines.push(`Schlaf-Dauer: ${bio.sleepHours}h`);
         if (bio.hrVariability) lines.push(`HRV Trend: ${bio.hrVariability}`);
     }
 
