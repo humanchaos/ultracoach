@@ -4,7 +4,27 @@ import { getDefaultVolumeByExperience } from '@/lib/coaching/athlete-defaults';
 import { buildSessionContext, generateFinalPlan, formatSafetyDisclaimer, type SafetyCheckResult, type SessionContext } from "@/lib/coaching/safety-guardian";
 import { interpretLifelog, formatReadinessForContext } from "@/lib/lifelog";
 import { auth } from "@/lib/auth";
-import { getRecentJournal, formatJournalForAI, upsertJournalEntry, getActiveTrainingBlock, getCurrentWeekInBlock, formatBlockForAIv2, getRaceById, getLactateTest, logSafetyCheck, type JournalEntry } from "@/lib/db";
+import { getRecentJournal, formatJournalForAI, upsertJournalEntry, getActiveTrainingBlock, getCurrentWeekInBlock, formatBlockForAIv2, getRaceById, getLactateTest, logSafetyCheck, getCoachMemories, saveCoachMemory, formatMemoriesForAI, type JournalEntry, type CoachMemory } from "@/lib/db";
+
+// ── Preference auto-detection ──────────────────────────────────────────────
+// Signals that the user is explicitly stating a preference the coach should remember
+const PREFERENCE_SIGNALS = [
+    /\bremember\b/i,
+    /\bplease note\b/i,
+    /\bkeep in mind\b/i,
+    /\balways use\b/i,
+    /\bi prefer\b/i,
+    /\bmy preference\b/i,
+    /\buse the following\b/i,
+    /\bnote that\b/i,
+    /\bfor my intervals\b/i,
+    /\bfor my (long )?runs?\b/i,
+    /\bmy settings?\b/i,
+];
+function isPreferenceMessage(text: string): boolean {
+    return PREFERENCE_SIGNALS.some(re => re.test(text));
+}
+// ──────────────────────────────────────────────────────────────────────────
 
 export const maxDuration = 45; // Increased to accommodate Safety Guardian loop
 
@@ -251,12 +271,42 @@ export async function POST(req: Request) {
         let lactateTest = null;
 
         if (userStravaId) {
-            const [block, journalEntries, lactateTestResult] = await Promise.all([
+            const [block, journalEntries, lactateTestResult, coachMemories] = await Promise.all([
                 getActiveTrainingBlock(userStravaId).catch(err => { console.warn('[Chat API v10] Could not load training block:', err); return null; }),
                 getRecentJournal(userStravaId, 90).catch(err => { console.warn('[Chat API v10] Could not load journal history:', err); return [] as JournalEntry[]; }),
                 getLactateTest(userStravaId).catch(err => { console.warn('[Chat API v10] Could not load lactate data:', err); return null; }),
+                getCoachMemories(userStravaId).catch(err => { console.warn('[Chat API v10] Could not load coach memories:', err); return [] as CoachMemory[]; }),
             ]);
             lactateTest = lactateTestResult;
+
+            // Auto-detect and save preference statements from the latest user message
+            // Fire-and-forget — don't block the response; saved memory appears in NEXT conversation
+            const lastUserMsg = [...messages].reverse().find((m: { role: string }) => m.role === 'user');
+            if (lastUserMsg && userStravaId) {
+                const msgText = typeof lastUserMsg.content === 'string'
+                    ? lastUserMsg.content
+                    : Array.isArray(lastUserMsg.content)
+                        ? lastUserMsg.content.map((c: { text?: string }) => c.text || '').join(' ')
+                        : '';
+                if (isPreferenceMessage(msgText)) {
+                    saveCoachMemory({
+                        user_strava_id: userStravaId,
+                        memory_type: 'preference',
+                        content: msgText.slice(0, 500),
+                        extracted_from: 'chat',
+                    }).catch(err => console.warn('[Chat API v10] Could not save preference memory:', err));
+                    if (isDev) console.log('[Chat API v10] 🧠 Preference detected and saved to memory');
+                }
+            }
+
+            // Inject coach memories into context (always first — the AI must respect these)
+            if (coachMemories.length > 0) {
+                const memoriesContext = formatMemoriesForAI(coachMemories);
+                if (memoriesContext) {
+                    contextSections.push(memoriesContext);
+                    if (isDev) console.log(`[Chat API v10] 🧠 Loaded ${coachMemories.length} coach memories`);
+                }
+            }
 
             // Process training block
             if (block) {
