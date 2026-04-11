@@ -308,7 +308,7 @@ export function DashboardClient({
 
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col overflow-auto">
+        <div className="h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex flex-col overflow-hidden">
 
             {/* Welcome Overlay for first-time users */}
             {showOnboarding && (
@@ -453,10 +453,61 @@ export function DashboardClient({
                 />
             )}
 
-            {/* Weekly Plan - Full Width at Top */}
-            <div className="px-6 py-4 border-b border-white/5">
+            {/* ── 3-Column Body ──────────────────────────────────────────────── */}
+            <div className="flex flex-1 min-h-0 overflow-hidden">
 
-                <div className="max-w-[1600px] mx-auto">
+                {/* ── LEFT: Stats Sidebar (260px) ─────────────────────────────── */}
+                <div className="w-[260px] shrink-0 flex flex-col gap-3 overflow-y-auto p-4 border-r border-white/5 scrollbar-thin">
+                    {/* Today's Focus */}
+                    <TodayCard
+                        activities={activities}
+                        onAskCoach={(msg) => chatRef.current?.sendMessage(msg)}
+                    />
+
+                    {/* Next Race */}
+                    <NextRace races={races} onRacesChange={handleRacesChange} hasActiveBlock={!!activeBlock} />
+
+                    {/* Weekly Progress Chart */}
+                    <ProgressChart activities={activities} />
+
+                    {/* Recent Runs */}
+                    <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl border border-white/10 p-4">
+                        <h2 className="font-bold text-white mb-3 flex items-center gap-2 text-sm">
+                            <span>📊</span>
+                            Recent Runs
+                        </h2>
+                        {error ? (
+                            <p className="text-red-400 text-sm">{error}</p>
+                        ) : activities.length === 0 ? (
+                            <p className="text-purple-300/60 text-sm">No recent runs found</p>
+                        ) : (
+                            <div className="space-y-2">
+                                {activities.slice(0, 6).map((activity, i) => (
+                                    <div
+                                        key={i}
+                                        className="p-2.5 bg-slate-700/50 rounded-xl hover:bg-slate-700 transition-colors border border-white/5"
+                                    >
+                                        <div className="font-medium text-white text-xs truncate">
+                                            {activity.name}
+                                        </div>
+                                        <div className="text-[10px] text-purple-300/80 mt-0.5">
+                                            {activity.date} • {activity.distance_km}km @ {activity.pace}/km
+                                        </div>
+                                        {activity.heart_rate && (
+                                            <div className="text-[10px] text-orange-400">
+                                                ❤️ {activity.heart_rate} bpm
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* ── CENTER: Training Plan (flex-1, scrolls independently) ────── */}
+                <div className="flex-1 min-w-0 overflow-y-auto p-5 flex flex-col gap-5 scrollbar-thin">
+                    {/* 7-Day Weekly Plan */}
                     <WeeklyPlanView
                         trainingContext={trainingContext}
                         racesContext={racesContext}
@@ -465,12 +516,10 @@ export function DashboardClient({
                         blockWorkouts={currentWeekDayPlans}
                         weekSummaryOverride={currentWeekSummary}
                         blockDataLoading={!blockFetched}
-                        onWorkoutsSaved={() => {
-                            // Refresh block data to update calendar with new workouts
-                            setRefreshKey(prev => prev + 1);
-                        }}
+                        onWorkoutsSaved={() => setRefreshKey(prev => prev + 1)}
                     />
-                    {/* Training Block Calendar - shows when active block exists */}
+
+                    {/* Macro Training Block Calendar — visible without scrolling */}
                     {fullBlock && fullBlock.block_plan && (
                         <>
                             <BlockCalendar
@@ -481,70 +530,17 @@ export function DashboardClient({
                         </>
                     )}
                 </div>
-            </div>
 
-            {/* Main content */}
-            <div className="flex-1 min-h-0 max-w-[1600px] mx-auto w-full px-6 py-4">
-                <div className="flex flex-col lg:flex-row gap-4 h-full">
-                    {/* Left Column - Next Race & Recent Runs */}
-                    <div className="lg:w-80 shrink-0 flex flex-col gap-4 overflow-auto">
-                        {/* Today's Card - Hero */}
-                        <TodayCard
-                            activities={activities}
-                            onAskCoach={(msg) => chatRef.current?.sendMessage(msg)}
-                        />
-
-                        {/* Next Race */}
-                        <NextRace races={races} onRacesChange={handleRacesChange} hasActiveBlock={!!activeBlock} />
-
-                        {/* Weekly Progress Chart */}
-                        <ProgressChart activities={activities} />
-
-                        {/* Recent Runs */}
-                        <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl border border-white/10 p-4 flex-1">
-                            <h2 className="font-bold text-white mb-3 flex items-center gap-2 text-sm">
-                                <span>📊</span>
-                                Recent Runs
-                            </h2>
-                            {error ? (
-                                <p className="text-red-400 text-sm">{error}</p>
-                            ) : activities.length === 0 ? (
-                                <p className="text-purple-300/60 text-sm">No recent runs found</p>
-                            ) : (
-                                <div className="space-y-2">
-                                    {activities.slice(0, 6).map((activity, i) => (
-                                        <div
-                                            key={i}
-                                            className="p-2.5 bg-slate-700/50 rounded-xl hover:bg-slate-700 transition-colors border border-white/5"
-                                        >
-                                            <div className="font-medium text-white text-xs truncate">
-                                                {activity.name}
-                                            </div>
-                                            <div className="text-[10px] text-purple-300/80 mt-0.5">
-                                                {activity.date} • {activity.distance_km}km @ {activity.pace}/km
-                                            </div>
-                                            {activity.heart_rate && (
-                                                <div className="text-[10px] text-orange-400">
-                                                    ❤️ {activity.heart_rate} bpm
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Right Column - Chat Interface */}
-                    <div className="flex-1 min-h-0 min-w-0">
-                        <ChatInterface
-                            ref={chatRef}
-                            trainingContext={fullContext}
-                            activities={activities}
-                            races={races}
-                        />
-                    </div>
+                {/* ── RIGHT: Chat (360px, constrained) ────────────────────────── */}
+                <div className="w-[360px] shrink-0 border-l border-white/5 overflow-hidden flex flex-col">
+                    <ChatInterface
+                        ref={chatRef}
+                        trainingContext={fullContext}
+                        activities={activities}
+                        races={races}
+                    />
                 </div>
+
             </div>
 
         </div>
