@@ -77,6 +77,10 @@ function createAthlete(profile?: {
 
 export async function POST(req: Request) {
     try {
+        // Resolve session ONCE — used throughout this handler
+        const session = await auth();
+        const userStravaId = session?.user?.stravaId;
+
         const body = await req.json();
         const {
             messages,
@@ -145,8 +149,7 @@ export async function POST(req: Request) {
         // LIFELOG v2: Only persist if this is a life update (not a question)
         if (lifelogResult && lifelogResult.is_life_update && lifelogResult.mentions?.length > 0) {
             try {
-                const session = await auth();
-                if (session?.user?.stravaId) {
+                if (userStravaId) {
                     const profile = lifelogResult.readiness_profile;
 
                     // Convert readiness statuses to numeric scores (OPTIMAL=9, REDUCED=5, COMPROMISED=2, UNKNOWN=null)
@@ -187,7 +190,7 @@ export async function POST(req: Request) {
                             profile?.cognitive_bandwidth?.status === 'OPTIMAL' ? 2 : undefined;
 
                     await upsertJournalEntry({
-                        user_strava_id: session.user.stravaId,
+                        user_strava_id: userStravaId,
                         date: new Date(),
                         sleep_quality: sleepScore,
                         stress_level: stressScore,
@@ -247,9 +250,8 @@ export async function POST(req: Request) {
         let trainingBlockData = undefined;
         let trainingBlockContext = '';
         try {
-            const session = await auth();
-            if (session?.user?.stravaId) {
-                const block = await getActiveTrainingBlock(session.user.stravaId);
+            if (userStravaId) {
+                const block = await getActiveTrainingBlock(userStravaId);
                 if (block) {
                     // Get the race for this block (if any)
                     const race = block.race_id ? await getRaceById(block.race_id) : undefined;
@@ -296,9 +298,8 @@ export async function POST(req: Request) {
 
         // 5. LIFELOG HISTORY (for pattern analysis - last 90 days)
         try {
-            const session = await auth();
-            if (session?.user?.stravaId) {
-                const journalEntries = await getRecentJournal(session.user.stravaId, 90);
+            if (userStravaId) {
+                const journalEntries = await getRecentJournal(userStravaId, 90);
                 const journalContext = formatJournalForAI(journalEntries);
                 if (journalContext) {
                     contextSections.push(journalContext);
@@ -311,9 +312,8 @@ export async function POST(req: Request) {
 
         // 6. PERSONALIZED HR ZONES (from saved lactate test data)
         try {
-            const session = await auth();
-            if (session?.user?.stravaId) {
-                const lactateTest = await getLactateTest(session.user.stravaId);
+            if (userStravaId) {
+                const lactateTest = await getLactateTest(userStravaId);
                 if (lactateTest && (lactateTest.z1_hr || lactateTest.aerobic_threshold_hr)) {
                     const zoneContext = `## PERSONALIZED HR ZONES (from lab test data)
 
@@ -399,12 +399,7 @@ ${lactateTest.max_hr ? `- Max HR: ${lactateTest.max_hr} bpm` : ''}`;
 
         // ============ SAFETY GUARDIAN v2: SessionContext + Orchestration ============
 
-        // Get user session for logging
-        let userStravaId: string | undefined;
-        try {
-            const session = await auth();
-            userStravaId = session?.user?.stravaId;
-        } catch { /* ignore auth errors for logging */ }
+        // userStravaId already resolved at top of handler
 
         // Build SessionContext — Single Source of Truth for Coach & Guardian
         const nextRace = v3Races.length > 0 ? {
