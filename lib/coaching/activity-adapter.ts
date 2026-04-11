@@ -41,23 +41,21 @@ export function parsePace(paceStr: string): number | undefined {
 
 // Adapter: Convert incoming activity data to StravaActivity format
 export function adaptActivities(activities: RawActivity[]): StravaActivity[] {
-    return activities
-        .map((a, i) => {
-            const rawDate = a.dateISO ? new Date(a.dateISO) : null;
-            const date = (rawDate && !isNaN(rawDate.getTime())) ? rawDate : parseActivityDate(a.date);
-            if (!date) return null;
-            return {
-                id: a.id || `activity-${i}`,
-                name: a.name,
-                date,
-                distance_km: a.distance_km,
-                duration_minutes: a.duration_minutes || 0,
-                pace_min_per_km: a.pace ? parsePace(a.pace) : undefined,
-                average_hr: a.heart_rate,
-                elevation_gain_m: a.elevation_gain_m,
-                type: (a.type === "Run" || a.type === "Walk" || a.type === "Hike" ||
-                    a.type === "Ride" || a.type === "Swim") ? a.type : "Run" as const,
-            };
-        })
-        .filter((a): a is StravaActivity => a !== null);
+    return activities.flatMap((a, i) => {
+        const rawDate = a.dateISO ? new Date(a.dateISO) : null;
+        const date = (rawDate && !isNaN(rawDate.getTime())) ? rawDate : parseActivityDate(a.date);
+        if (!date) return [];
+        return [{
+            id: a.id || `activity-${i}`,
+            name: a.name,
+            date,
+            distance_km: a.distance_km,
+            duration_minutes: a.duration_minutes || 0,
+            pace_min_per_km: a.pace ? parsePace(a.pace) : undefined,
+            average_hr: a.heart_rate,
+            elevation_gain_m: a.elevation_gain_m,
+            type: (a.type === "Run" || a.type === "Walk" || a.type === "Hike" ||
+                a.type === "Ride" || a.type === "Swim") ? a.type : "Run" as const,
+        }];
+    });
 }
