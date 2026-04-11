@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { SYSTEM_PROMPT, buildDataContext, type Athlete, type StravaActivity, type UpcomingRace } from "@/lib/coaching";
+import { adaptActivities } from "@/lib/coaching/activity-adapter";
 import { validateWeeklyVolume, rescaleWorkouts, checkMacroDrift } from "@/lib/coaching/logic";
 import { auth } from "@/lib/auth";
 import {
@@ -41,65 +42,6 @@ interface TrainingPlanResponse {
     weekSummary: string;
     adjustmentNote?: string;
     fromStorage?: boolean; // New: indicates if plan came from DB
-}
-
-// Adapter: Convert incoming activity data to v3 StravaActivity format
-function adaptActivities(activities: Array<{
-    id?: string;
-    name: string;
-    date: string;
-    dateISO?: string;  // ISO date for accurate parsing (preferred)
-    distance_km: number;
-    duration_minutes?: number;
-    pace?: string;
-    heart_rate?: number;
-    elevation_gain_m?: number;
-    type?: string;
-}>): StravaActivity[] {
-    return activities
-        .map((a, i) => {
-            const date = a.dateISO ? new Date(a.dateISO) : parseActivityDate(a.date);
-            if (!date) return null;
-            return {
-                id: a.id || `activity-${i}`,
-                name: a.name,
-                date,
-                distance_km: a.distance_km,
-                duration_minutes: a.duration_minutes || 0,
-                pace_min_per_km: a.pace ? parsePace(a.pace) : undefined,
-                average_hr: a.heart_rate,
-                elevation_gain_m: a.elevation_gain_m,
-                type: (a.type === "Run" || a.type === "Walk" || a.type === "Hike" ||
-                    a.type === "Ride" || a.type === "Swim") ? a.type : "Run" as const,
-            };
-        })
-        .filter((a): a is StravaActivity => a !== null);
-}
-
-// Parse activity date - handles "Mon, Dec 29" format
-function parseActivityDate(dateStr: string): Date | null {
-    const currentYear = new Date().getFullYear();
-    const match = dateStr.match(/([A-Za-z]+),?\s*([A-Za-z]+)\s+(\d+)/);
-    if (match) {
-        const monthStr = match[2];
-        const day = parseInt(match[3]);
-        const months: { [key: string]: number } = {
-            'jan': 0, 'feb': 1, 'mar': 2, 'apr': 3, 'may': 4, 'jun': 5,
-            'jul': 6, 'aug': 7, 'sep': 8, 'oct': 9, 'nov': 10, 'dec': 11
-        };
-        const month = months[monthStr.toLowerCase().slice(0, 3)];
-        if (month !== undefined) return new Date(currentYear, month, day);
-    }
-    const parsed = new Date(dateStr);
-    if (!isNaN(parsed.getTime())) return parsed;
-    console.warn(`[parseActivityDate] Failed to parse date: "${dateStr}" — activity skipped`);
-    return null;
-}
-
-function parsePace(paceStr: string): number | undefined {
-    const match = paceStr.match(/(\d+):(\d+)/);
-    if (match) return parseInt(match[1]) + parseInt(match[2]) / 60;
-    return undefined;
 }
 
 // Adapter: Convert races to v3 format
