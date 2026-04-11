@@ -496,7 +496,7 @@ export function extractStravaMetrics(
 
     return {
         avgWeeklyDistanceLast4Weeks: Math.round(avgWeeklyDistance * 10) / 10,
-        proposedWeeklyDistance: Math.round(thisWeekDistance * 10) / 10,
+        proposedWeeklyDistance: undefined,
         thisWeekDistance: Math.round(thisWeekDistance * 10) / 10,
         acwr,
         lastEvent: lastMajorEvent ? {

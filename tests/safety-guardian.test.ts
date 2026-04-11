@@ -250,7 +250,7 @@ describe('extractStravaMetrics - ACWR', () => {
         // Acute = 50km
         // ACWR = 50 / 11.25 ≈ 4.44 → clearly dangerous, must be > 2.0
         expect(metrics.acwr).toBeGreaterThan(2.0);
-        expect(metrics.avgWeeklyDistanceLast4Weeks).toBeCloseTo(11.3, 0);
+        expect(metrics.avgWeeklyDistanceLast4Weeks).toBeCloseTo(11.3, 1);
     });
 
     it('should return ACWR ~1.0 for consistent weekly training', () => {
