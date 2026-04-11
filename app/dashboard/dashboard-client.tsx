@@ -75,6 +75,7 @@ export function DashboardClient({
 }: DashboardClientProps) {
     const [refreshKey, setRefreshKey] = useState(0);
     const [showPreferences, setShowPreferences] = useState(false);
+    const [blockFetched, setBlockFetched] = useState(false); // true once block API resolves
     const [activeBlock, setActiveBlock] = useState<{
         id: number;
         raceName: string;
@@ -112,16 +113,21 @@ export function DashboardClient({
                         setActiveBlock(null);
                         setFullBlock(null);
                     }
+                    setBlockFetched(true); // signal WeeklyPlanView it can now decide whether to generate
                 } else if (res.status === 504 && retryCount < 2) {
                     // Retry on timeout (cold start)
                     console.log(`[Dashboard] Retrying block fetch (attempt ${retryCount + 2})...`);
                     setTimeout(() => fetchActiveBlock(retryCount + 1), 1000);
+                } else {
+                    setBlockFetched(true); // non-retryable error — let WeeklyPlanView proceed
                 }
             } catch (error) {
                 console.error('[Dashboard] Failed to fetch active block:', error);
                 // Retry on network error
                 if (retryCount < 2) {
                     setTimeout(() => fetchActiveBlock(retryCount + 1), 1000);
+                } else {
+                    setBlockFetched(true); // give up retrying — let WeeklyPlanView proceed
                 }
             }
         };
@@ -458,6 +464,7 @@ export function DashboardClient({
                         races={races}
                         blockWorkouts={currentWeekDayPlans}
                         weekSummaryOverride={currentWeekSummary}
+                        blockDataLoading={!blockFetched}
                         onWorkoutsSaved={() => {
                             // Refresh block data to update calendar with new workouts
                             setRefreshKey(prev => prev + 1);

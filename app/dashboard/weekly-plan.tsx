@@ -56,6 +56,7 @@ interface WeeklyPlanProps {
     onWorkoutsSaved?: () => void;
     blockWorkouts?: DayPlan[];  // Pre-loaded from training block (single source of truth)
     weekSummaryOverride?: string; // Summary from training block
+    blockDataLoading?: boolean;  // True while parent is still fetching block data — prevents premature AI plan generation
 }
 
 function parsePlanDate(dateStr: string): Date {
@@ -167,7 +168,7 @@ const COMPLETION_STYLES: Record<CompletionStatus, { border: string; bg: string; 
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function WeeklyPlanView({ trainingContext, racesContext, activities, races, onWorkoutsSaved, blockWorkouts, weekSummaryOverride }: WeeklyPlanProps) {
+export function WeeklyPlanView({ trainingContext, racesContext, activities, races, onWorkoutsSaved, blockWorkouts, weekSummaryOverride, blockDataLoading }: WeeklyPlanProps) {
     const [plan, setPlan] = useState<DayPlan[]>([]);
     const [weekSummary, setWeekSummary] = useState("");
     const [isLoading, setIsLoading] = useState(true);
@@ -226,12 +227,15 @@ export function WeeklyPlanView({ trainingContext, racesContext, activities, race
             setHasLoaded(true);
             return;
         }
+        // Wait for parent to finish fetching block data before deciding to generate
+        // This prevents firing an AI plan generation that gets immediately replaced
+        if (blockDataLoading) return;
         // Only generate once per mount, not on every context change
         if (!hasLoaded) {
             generatePlan();
             setHasLoaded(true);
         }
-    }, [hasLoaded, blockWorkouts]);
+    }, [hasLoaded, blockWorkouts, blockDataLoading]);
 
     const generatePlan = async (mode: 'normal' | 'force' | 'enhance' = 'normal') => {
         setIsLoading(true);
@@ -393,8 +397,9 @@ export function WeeklyPlanView({ trainingContext, racesContext, activities, race
                     const isToday = status === "today";
                     const isSelected = selectedDay?.day === day.day;
 
-                    // Planned vs actual (O(1) lookup via index map)
-                    const actuals = (isPast || isToday) ? getActuals(day.date) : null;
+                    // Planned vs actual — only after clientToday is set (avoids hydration mismatch)
+                    // On server render clientToday is null → actuals=null → no extra DOM nodes
+                    const actuals = (clientToday && (isPast || isToday)) ? getActuals(day.date) : null;
                     const completion = getCompletionStatus(day, actuals, isPast);
                     const cs = COMPLETION_STYLES[completion];
 
