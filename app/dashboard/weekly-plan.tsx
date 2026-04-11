@@ -102,6 +102,12 @@ function getDayStatus(dateStr: string): "past" | "today" | "future" {
 
 // ─── Actual vs Planned helpers ────────────────────────────────────────────
 
+// Always use LOCAL date components for keys — toISOString() returns UTC which
+// shifts dates in non-UTC timezones (e.g. Apr 11 midnight UTC+2 = Apr 10 UTC)
+function localDateKey(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 interface DayActuals {
     totalKm: number;
     avgHR: number | null;
@@ -182,13 +188,14 @@ export function WeeklyPlanView({ trainingContext, racesContext, activities, race
     const [hasLoaded, setHasLoaded] = useState(false);
 
     // Build date→activities index once per activities change (js-index-maps)
-    // Key: "YYYY-MM-DD", value: array of activities on that date
+    // Key: local "YYYY-MM-DD" — must use local date components, NOT toISOString()
+    // (toISOString is UTC; midnight local in UTC+2 would shift to the previous UTC date)
     const activitiesByDate = useMemo(() => {
         const map = new Map<string, Activity[]>();
         for (const a of (activities || [])) {
             const raw = a.dateISO ? new Date(a.dateISO) : new Date(a.date);
             if (isNaN(raw.getTime())) continue;
-            const key = raw.toISOString().slice(0, 10); // "YYYY-MM-DD"
+            const key = localDateKey(raw); // local calendar date, not UTC
             const bucket = map.get(key);
             if (bucket) bucket.push(a);
             else map.set(key, [a]);
@@ -200,7 +207,7 @@ export function WeeklyPlanView({ trainingContext, racesContext, activities, race
     const getActuals = (dateStr: string): DayActuals | null => {
         const planDate = parsePlanDate(dateStr);
         if (!planDate || isNaN(planDate.getTime())) return null;
-        const key = planDate.toISOString().slice(0, 10);
+        const key = localDateKey(planDate); // local calendar date, matches index keys
         const matched = activitiesByDate.get(key);
         if (!matched || matched.length === 0) return null;
 
