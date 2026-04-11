@@ -183,9 +183,10 @@ Your original plan was flagged as **high risk** by the Safety Guardian and could
 }
 
 function detectLanguage(text: string): 'en' | 'de' {
-    const deMarkers = ['Montag', 'Dienstag', 'Mittwoch', 'diese Woche', 'Trainingsplan', 'Ruhetag'];
-    const deCount = deMarkers.filter(m => text.includes(m)).length;
-    return deCount >= 2 ? 'de' : 'en';
+    const lower = text.toLowerCase();
+    const deMarkers = ['montag', 'dienstag', 'mittwoch', 'diese woche', 'trainingsplan', 'ruhetag'];
+    const deCount = deMarkers.filter(m => lower.includes(m)).length;
+    return deCount >= 3 ? 'de' : 'en';  // require 3+ markers to avoid false positives
 }
 
 // ============================================

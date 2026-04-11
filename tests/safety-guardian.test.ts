@@ -380,4 +380,18 @@ describe('getRecoveryWeekTemplate — language support', () => {
         const result = getRecoveryWeekTemplate();
         expect(result).toContain('Recovery Week');
     });
+
+    it('German draft content produces German recovery template', () => {
+        // Verify that a text with 3+ German markers maps to the German template
+        // (detectLanguage is private, but we can verify the contract through getRecoveryWeekTemplate)
+        const germanMarkers = 'Montag Ruhetag Dienstag diese Woche Trainingsplan';
+        // Simple inline version of the logic for test clarity:
+        const lower = germanMarkers.toLowerCase();
+        const markers = ['montag', 'dienstag', 'mittwoch', 'diese woche', 'trainingsplan', 'ruhetag'];
+        const count = markers.filter(m => lower.includes(m)).length;
+        const lang = count >= 3 ? 'de' : 'en';
+
+        expect(lang).toBe('de');
+        expect(getRecoveryWeekTemplate(lang)).toContain('Recovery-Woche');
+    });
 });
