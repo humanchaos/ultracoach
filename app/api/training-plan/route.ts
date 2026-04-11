@@ -317,11 +317,20 @@ function normalizeWeekPlanDates(weekPlan: DayPlan[]): DayPlan[] {
     });
 }
 
+const DAY_NAME_MAP: Record<string, string> = {
+    'mon': 'Monday', 'monday': 'Monday',
+    'tue': 'Tuesday', 'tuesday': 'Tuesday',
+    'wed': 'Wednesday', 'wednesday': 'Wednesday',
+    'thu': 'Thursday', 'thursday': 'Thursday',
+    'fri': 'Friday', 'friday': 'Friday',
+    'sat': 'Saturday', 'saturday': 'Saturday',
+    'sun': 'Sunday', 'sunday': 'Sunday',
+};
+
 // Convert DayPlan to DailyWorkout for storage
 function dayPlanToStoredWorkouts(plan: DayPlan[]): DailyWorkout[] {
-    const fullDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    return plan.map((p, i) => ({
-        day: fullDays[i] || p.day,
+    return plan.map((p) => ({
+        day: DAY_NAME_MAP[p.day.toLowerCase()] || p.day,
         type: p.title || p.type,
         distance_km: p.distance_km,
         duration_min: p.duration ? parseInt(p.duration) : undefined,

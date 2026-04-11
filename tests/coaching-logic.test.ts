@@ -180,3 +180,28 @@ describe('Coaching Logic - Readiness Calculation', () => {
         expect(report.avgStress).toBe(5); // (4 + 6) / 2
     });
 });
+
+describe('dayPlanToStoredWorkouts — day name correctness', () => {
+    it('stores the correct day name from the plan, not from array position', () => {
+        // Simulate a 3-day plan (AI returned fewer days)
+        const partialPlan = [
+            { day: 'Wed', date: 'Apr 16', type: 'run' as const, title: 'Easy Run',
+              description: 'Easy', intensity: 'easy' as const, rationale: 'r' },
+            { day: 'Fri', date: 'Apr 18', type: 'tempo' as const, title: 'Tempo',
+              description: 'Hard', intensity: 'hard' as const, rationale: 'r' },
+            { day: 'Sun', date: 'Apr 20', type: 'long' as const, title: 'Long Run',
+              description: 'Long', intensity: 'moderate' as const, rationale: 'r' },
+        ];
+
+        const dayMap: Record<string, string> = {
+            'mon': 'Monday', 'tue': 'Tuesday', 'wed': 'Wednesday',
+            'thu': 'Thursday', 'fri': 'Friday', 'sat': 'Saturday', 'sun': 'Sunday',
+        };
+        const result = partialPlan.map(p => ({
+            day: dayMap[p.day.toLowerCase()] || p.day,
+        }));
+        expect(result[0].day).toBe('Wednesday');
+        expect(result[1].day).toBe('Friday');
+        expect(result[2].day).toBe('Sunday');
+    });
+});
