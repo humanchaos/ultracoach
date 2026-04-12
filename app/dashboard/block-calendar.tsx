@@ -89,7 +89,7 @@ const DAY_MAP: Record<string, number> = {
 };
 
 export function BlockCalendar({ block, currentWeek }: BlockCalendarProps) {
-    const [expanded, setExpanded] = useState(false);
+    const [expanded, setExpanded] = useState(true);
     const [viewMode, setViewMode] = useState<'grid' | 'phases'>('grid');
     const plan = block.block_plan;
 
