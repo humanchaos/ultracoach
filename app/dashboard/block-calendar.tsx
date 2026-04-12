@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 interface DailyWorkout {
     day: string;
@@ -91,6 +91,9 @@ const DAY_MAP: Record<string, number> = {
 export function BlockCalendar({ block, currentWeek }: BlockCalendarProps) {
     const [expanded, setExpanded] = useState(true);
     const [viewMode, setViewMode] = useState<'grid' | 'phases'>('grid');
+    // Defer today's date to client-only — avoids SSR/client hydration mismatch (#418)
+    // Server renders null → no date-dependent classes → hydration succeeds → useEffect fires
+    const [clientToday, setClientToday] = useState<Date | null>(null);
     const plan = block.block_plan;
 
     // Build week-to-phase mapping
@@ -218,12 +221,16 @@ export function BlockCalendar({ block, currentWeek }: BlockCalendarProps) {
         return groups;
     }, [calendarData]);
 
+    // Set client today after hydration — null during SSR so date-dependent classes don't mismatch
+    useEffect(() => {
+        const t = new Date();
+        t.setHours(0, 0, 0, 0);
+        setClientToday(t);
+    }, []);
+
     if (!plan || !plan.phases) {
         return null;
     }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
 
     return (
         <div className="mt-4">
@@ -365,8 +372,8 @@ export function BlockCalendar({ block, currentWeek }: BlockCalendarProps) {
 
                                                 {/* Day Cells */}
                                                 {week.days.map((day, dayIdx) => {
-                                                    const isToday = day.date.toDateString() === today.toDateString();
-                                                    const isPast = day.date < today;
+                                                    const isToday = clientToday ? day.date.toDateString() === clientToday.toDateString() : false;
+                                                    const isPast = clientToday ? day.date < clientToday : false;
                                                     const isRaceDay = day.isRaceDay;
 
                                                     return (
